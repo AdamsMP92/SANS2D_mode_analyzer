@@ -1,0 +1,10 @@
+.pixi/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+dist/
+build/
+*.egg-info/
+examples/*.png
+experimental_data/**/analysis_results/*.png

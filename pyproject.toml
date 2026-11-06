@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sans2d-mode-analyzer"
+version = "0.1.0"
+description = "Orthogonal mode expansions and least-squares fits on circular annuli"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "SANS2D mode analyzer contributors" }]
+dependencies = ["numpy>=1.26", "matplotlib>=3.8", "scipy>=1.11", "h5py>=3.10"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sans2d_mode_analyzer", "synthetic_models"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,26 @@
+[workspace]
+name = "sans2d-mode-analyzer"
+version = "0.1.0"
+description = "Development environment for the SANS2D mode analyzer"
+authors = ["SANS2D mode analyzer contributors"]
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64"]
+
+[dependencies]
+python = ">=3.10,<3.14"
+numpy = ">=1.26"
+matplotlib = ">=3.8"
+scipy = ">=1.11"
+h5py = ">=3.10"
+pytest = ">=8"
+pip = ">=24"
+
+[pypi-dependencies]
+sans2d-mode-analyzer = { path = ".", editable = true }
+
+[tasks]
+test = "pytest"
+example = "python examples/synthetic_sphere_fit.py"
+experimental-example = "python examples/experimental_10mT_fit.py"
+analyze-nanoflower = "python experimental_data/220nm_nanoflower/analyze_all.py"
+analyze-ivan = "python experimental_data/ivan_orthodecomp/analyze_all.py"
