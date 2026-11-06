@@ -24,8 +24,8 @@ for data_file in data_files:
         intensity,
         q_min=0.005,
         q_max=0.030,
-        n_max=8,
-        m_max=8,
+        n_max=25,
+        m_max=25,
         output_path=output,
     )
     print(f"wrote {output.relative_to(dataset_directory)}")
