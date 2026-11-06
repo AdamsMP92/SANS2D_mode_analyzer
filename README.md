@@ -46,6 +46,7 @@ pixi install
 pixi run test
 pixi run example
 pixi run experimental-example
+pixi run ivan-example
 pixi run analyze-nanoflower
 pixi run analyze-ivan
 ```
@@ -75,6 +76,9 @@ MATLAB OrthoDecomp work is stored under
 [`experimental_data/ivan_orthodecomp`](experimental_data/ivan_orthodecomp).
 Each data set documents its own format, provenance, caveats, analysis script,
 and generated results in its local README.
+The compact `examples/experimental_ivan_000000_fit.py` example applies the
+same standard/convergence switch to `000000.dat` over the legacy interval
+`0.005 <= q <= 0.030 nm^-1`.
 
 ## Standard analyzer
 
@@ -137,6 +141,88 @@ cosine and sine statistics with their 95% F-test thresholds in a separate plot
 row.  A point above its threshold rejects the joint null hypothesis that all
 radial coefficients of that angular contribution are zero, conditional on the
 ordinary least-squares noise model.
+
+## Mode-convergence test
+
+`mode_convergence_standard_analyzer(...)` automates the selection of the rectangular
+truncation `(n_max, m_max)`. It fits every integer pair up to a supplied
+reference limit and compares each candidate with the largest tested model:
+
+```python
+from sans2d_mode_analyzer import mode_convergence_standard_analyzer
+
+convergence = mode_convergence_standard_analyzer(
+    q_z,
+    q_y,
+    intensity,
+    q_min=0.015,
+    q_max=0.050,
+    n_max_limit=10,
+    m_max_limit=10,
+    prediction_tolerance=0.01,
+    coefficient_tolerance=0.05,
+    relative_mse_tolerance=0.001,
+    output_path="converged_standard_analysis.png",
+)
+
+print(convergence.selected_n_max, convergence.selected_m_max)
+analysis = convergence.standard_analysis
+```
+
+A candidate is stable only when its reconstructed detector signal, its
+zero-padded coefficient vector, and its MSE are all sufficiently close to the
+largest tested reference model. Among stable candidates, the pair containing
+the fewest product modes is selected. The convergence sweep reuses one
+maximum-order design matrix; only the selected pair is passed to the complete
+`standard_analyzer(...)` for plotting and the returned final analysis.
+
+The result also contains the complete MSE, prediction-change,
+coefficient-change, relative-MSE-excess, and stability grids. If
+`stabilized_within_limits` is false, at least one selected order lies on the
+tested upper boundary, so convergence beyond that boundary has not been
+demonstrated. Agreement with a finite reference truncation is a numerical
+stability diagnostic, not proof that the reference itself is free of
+overfitting.
+
+## Angular template tests
+
+The template tests are deliberately separate from `standard_analyzer(...)`
+and can be applied to its fitted coefficients as a second analysis step:
+
+```python
+from sans2d_mode_analyzer import (
+    test_sin_squared,
+    test_sin_squared_cos_squared,
+)
+
+sin2 = test_sin_squared(result.fit.coefficients, result.fit.indices)
+spin_flip = test_sin_squared_cos_squared(
+    result.fit.coefficients,
+    result.fit.indices,
+)
+
+print(sin2.explained_power_fraction)
+print(sin2.pair_mismatch_power_fraction)
+print(sin2.forbidden_mode_power_fraction)
+```
+
+Both tests leave the radial amplitude `A(q)` unrestricted within the fitted
+radial basis and project the complete coefficient vector onto the requested
+angular-template subspace. The residual is separated into
+
+- a mismatch between the constant and target cosine amplitudes; and
+- power in all other cosine and sine modes, which are forbidden by the exact
+  template.
+
+For the conventional Fourier expansion `a_0(q) + a_n(q) cos(n theta)`, both
+`sin(theta)^2` and `sin(theta)^2 cos(theta)^2` require
+`a_n(q) / a_0(q) = -1`, with `n = 2` and `n = 4`, respectively. The package
+uses an orthonormal angular basis, so the equivalent internal coefficient
+condition is `c_n(q) / c_0(q) = -1/sqrt(2)`, not `-1`.
+
+These fractions diagnose agreement with an ideal angular form conditional on
+the fitted expansion. They do not yet propagate coefficient uncertainty or
+replace checks of centering, masking, reduction, and the selected `q` range.
 
 ## Example
 

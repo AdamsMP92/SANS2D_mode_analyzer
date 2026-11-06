@@ -22,5 +22,6 @@ sans2d-mode-analyzer = { path = ".", editable = true }
 test = "pytest"
 example = "python examples/synthetic_sphere_fit.py"
 experimental-example = "python examples/experimental_10mT_fit.py"
+ivan-example = "python examples/experimental_ivan_000000_fit.py"
 analyze-nanoflower = "python experimental_data/220nm_nanoflower/analyze_all.py"
 analyze-ivan = "python experimental_data/ivan_orthodecomp/analyze_all.py"

@@ -147,7 +147,9 @@ def standard_analyzer(
     cosine_axis = figure.add_subplot(grid[1, 0:3])
     sine_axis = figure.add_subplot(grid[1, 3:6])
     cosine_test_axis = figure.add_subplot(grid[2, 0:3])
-    sine_test_axis = figure.add_subplot(grid[2, 3:6])
+    sine_test_axis = figure.add_subplot(
+        grid[2, 3:6], sharey=cosine_test_axis
+    )
     cosine_map_axis = figure.add_subplot(grid[3, 0:3])
     sine_map_axis = figure.add_subplot(grid[3, 3:6])
     cosine_spectra_axis = figure.add_subplot(grid[4, 0:3])
@@ -266,22 +268,44 @@ def standard_analyzer(
     sine_lower_error = np.minimum(
         sine_uncertainty, np.maximum(sine_fraction - lower_limit, 0.0)
     )
-    cosine_axis.errorbar(
-        powers.orders,
-        cosine_fraction,
-        yerr=np.vstack([cosine_lower_error, cosine_uncertainty]),
-        fmt="o",
-        color="tab:blue",
-        capsize=3,
-    )
-    sine_axis.errorbar(
-        powers.orders[1:],
-        sine_fraction[1:],
-        yerr=np.vstack([sine_lower_error[1:], sine_uncertainty[1:]]),
-        fmt="o",
-        color="tab:orange",
-        capsize=3,
-    )
+    cosine_even = powers.orders % 2 == 0
+    cosine_odd = ~cosine_even
+    sine_orders = powers.orders[1:]
+    sine_even = sine_orders % 2 == 0
+    sine_odd = ~sine_even
+
+    for mask, color, label in [
+        (cosine_even, "tab:blue", "even orders"),
+        (cosine_odd, "0.75", "odd orders"),
+    ]:
+        cosine_axis.errorbar(
+            powers.orders[mask],
+            cosine_fraction[mask],
+            yerr=np.vstack(
+                [cosine_lower_error[mask], cosine_uncertainty[mask]]
+            ),
+            fmt="o",
+            color=color,
+            markeredgecolor="0.55" if label == "odd orders" else color,
+            capsize=3,
+            label=label,
+        )
+    for mask, color, label in [
+        (sine_even, "tab:orange", "even orders"),
+        (sine_odd, "0.75", "odd orders"),
+    ]:
+        sine_axis.errorbar(
+            sine_orders[mask],
+            sine_fraction[1:][mask],
+            yerr=np.vstack(
+                [sine_lower_error[1:][mask], sine_uncertainty[1:][mask]]
+            ),
+            fmt="o",
+            color=color,
+            markeredgecolor="0.55" if label == "odd orders" else color,
+            capsize=3,
+            label=label,
+        )
 
     for axis, title in zip(
         [cosine_axis, sine_axis], ["cosine angular powers", "sine angular powers"]
@@ -293,13 +317,15 @@ def standard_analyzer(
         axis.set_yscale("log")
         axis.set_ylim(lower_limit, upper_limit)
         axis.grid(axis="y", alpha=0.25)
+        axis.legend(fontsize=8)
 
-    for axis, statistic, critical, valid, title in [
+    for axis, statistic, critical, valid, even_color, title in [
         (
             cosine_test_axis,
             block_tests.cosine_statistic,
             block_tests.cosine_critical_value,
             block_tests.cosine_degrees_of_freedom > 0,
+            "tab:blue",
             "cosine angular block tests",
         ),
         (
@@ -307,14 +333,26 @@ def standard_analyzer(
             block_tests.sine_statistic,
             block_tests.sine_critical_value,
             block_tests.sine_degrees_of_freedom > 0,
+            "tab:orange",
             "sine angular block tests",
         ),
     ]:
+        even = valid & (block_tests.orders % 2 == 0)
+        odd = valid & (block_tests.orders % 2 == 1)
         axis.plot(
-            block_tests.orders[valid],
-            statistic[valid],
+            block_tests.orders[even],
+            statistic[even],
             "o",
-            label=r"block statistic $T_n$",
+            color=even_color,
+            label="even orders",
+        )
+        axis.plot(
+            block_tests.orders[odd],
+            statistic[odd],
+            "o",
+            color="0.75",
+            markeredgecolor="0.55",
+            label="odd orders",
         )
         axis.plot(
             block_tests.orders[valid],
