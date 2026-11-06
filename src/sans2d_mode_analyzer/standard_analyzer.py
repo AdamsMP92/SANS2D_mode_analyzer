@@ -9,14 +9,25 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from .block_test import AngularBlockTests, angular_block_tests
-from .fit import MSEFitResult, fit_mse
+from .fit import MSEFitResult, fit_design_matrix, fit_mse, fit_wls
 from .indices import ModeIndex, rectangular_indices
+from .io import DetectorData
 from .power import (
     AngularModePowers,
+    ParityMismatchMeasures,
     ParityPowerFractions,
     angular_mode_powers,
     parity_power_fractions,
+    parity_mismatch_measures,
     power_model_selector,
+)
+from .preconditioning import (
+    CenterRefinementResult,
+    affine_detector_geometry,
+    apply_center_correction,
+    center_point_cloud_by_parity,
+    pixel_integrated_annulus_design,
+    refine_center_by_parity,
 )
 from .spectra import angular_radial_spectra
 
@@ -28,10 +39,18 @@ class StandardAnalysisResult:
     fit: MSEFitResult
     powers: AngularModePowers
     parity_fractions: ParityPowerFractions
+    parity_mismatch: ParityMismatchMeasures
     block_tests: AngularBlockTests
     input_image: NDArray[np.float64]
     fit_image: NDArray[np.float64]
     residual_image: NDArray[np.float64]
+    selected_mask: NDArray[np.bool_]
+    uncertainty_image: NDArray[np.float64] | None
+    sample_weight_image: NDArray[np.float64] | None
+    beam_centering_method: str | None
+    beam_centering_refinement: CenterRefinementResult | None
+    center_shift_q_z: float
+    center_shift_q_y: float
     selected_indices_by_threshold: dict[float, tuple[ModeIndex, ...]]
     output_path: Path
 
@@ -75,52 +94,221 @@ def standard_analyzer(
     q_y: ArrayLike,
     intensity: ArrayLike,
     *,
-    q_min: float,
-    q_max: float,
-    n_max: int,
-    m_max: int,
+    q_range: tuple[float, float] | list[float] | None = None,
+    mode_limits: tuple[int, int] | list[int] | None = None,
+    q_min: float | None = None,
+    q_max: float | None = None,
+    n_max: int | None = None,
+    m_max: int | None = None,
+    uncertainty: ArrayLike | None = None,
+    sample_weight: ArrayLike | None = None,
+    absolute_uncertainty: bool = True,
+    beam_centering: bool = False,
+    beam_centering_grid_size: int = 129,
+    beam_centering_source_radius_factor: float = 1.05,
+    beam_centering_max_shift_pixels: float = 2.0,
+    log_intensity_colorbar: bool = False,
+    pixel_integration_subpixels: int | None = None,
+    pixel_integration_chunk_size: int = 512,
     power_thresholds: tuple[float, ...] = (0.95, 0.98, 0.99),
     block_test_confidence: float = 0.95,
     output_path: str | Path = "standard_analysis.png",
 ) -> StandardAnalysisResult:
-    """Fit a full rectangular mode grid and save a multi-panel PNG summary."""
+    """Fit a full rectangular mode grid and save a multi-panel PNG summary.
+
+    ``q_range=(q_min, q_max)`` and ``mode_limits=(n_max, m_max)`` are the
+    preferred high-level inputs; two-element lists are accepted as well. The
+    four separate legacy keywords remain supported, but the two forms cannot
+    be mixed. Supplying ``uncertainty`` activates uncertainty-weighted least squares.
+    ``sample_weight`` can additionally contain fractional pixel coverage.  If
+    weights are supplied without uncertainties, they define relative weights
+    and the residual scatter sets the covariance scale.  Setting
+    ``pixel_integration_subpixels`` averages every basis function over the
+    admitted subpixel area and automatically uses that fractional area as an
+    additional sample weight. With ``beam_centering=True``, a one-dimensional
+    point list is centred through :func:`center_point_cloud_by_parity`, whereas
+    a two-dimensional detector image uses the native affine-grid parity
+    refinement. Supplied uncertainties are required for either path.
+    ``log_intensity_colorbar=True`` changes only the shared display norm of
+    the input and fitted intensity panels; nonpositive display values are
+    masked but remain included in the numerical fit.
+    """
     import matplotlib.pyplot as plt
+
+    q_min, q_max, n_max, m_max = _resolve_analysis_arguments(
+        q_range=q_range,
+        mode_limits=mode_limits,
+        q_min=q_min,
+        q_max=q_max,
+        n_max=n_max,
+        m_max=m_max,
+    )
 
     q_z, q_y, intensity = np.broadcast_arrays(
         np.asarray(q_z, dtype=float),
         np.asarray(q_y, dtype=float),
         np.asarray(intensity, dtype=float),
     )
+    uncertainty_array = None
+    if uncertainty is not None:
+        uncertainty_array = np.broadcast_to(
+            np.asarray(uncertainty, dtype=float), intensity.shape
+        )
+    weight_array = None
+    if sample_weight is not None:
+        weight_array = np.broadcast_to(
+            np.asarray(sample_weight, dtype=float), intensity.shape
+        )
     if intensity.ndim not in (1, 2):
         raise ValueError(
             "standard_analyzer expects a one-dimensional detector point list "
             "or two-dimensional detector arrays"
         )
 
+    beam_centering_method = None
+    beam_centering_refinement = None
+    center_shift_q_z = 0.0
+    center_shift_q_y = 0.0
+    if beam_centering:
+        if uncertainty_array is None:
+            raise ValueError("beam_centering=True requires supplied uncertainty")
+        detector = DetectorData(q_z, q_y, intensity, uncertainty_array)
+        if intensity.ndim == 1:
+            centering = center_point_cloud_by_parity(
+                detector,
+                q_min=q_min,
+                q_max=q_max,
+                grid_size=beam_centering_grid_size,
+                source_radius_factor=beam_centering_source_radius_factor,
+                max_shift_pixels=beam_centering_max_shift_pixels,
+            )
+            centered_detector = centering.centered_data
+            beam_centering_method = "point-cloud parity"
+            beam_centering_refinement = centering.refinement
+            center_shift_q_z = centering.delta_q_z
+            center_shift_q_y = centering.delta_q_y
+        else:
+            refinement = refine_center_by_parity(
+                detector,
+                q_min=q_min,
+                q_max=q_max,
+                max_shift_pixels=beam_centering_max_shift_pixels,
+            )
+            geometry = affine_detector_geometry(q_z, q_y)
+            delta_q = geometry.matrix @ np.array(
+                [refinement.delta_row, refinement.delta_column]
+            )
+            centered_detector = apply_center_correction(
+                detector,
+                refinement.delta_row,
+                refinement.delta_column,
+            )
+            beam_centering_method = "affine-grid parity"
+            beam_centering_refinement = refinement
+            center_shift_q_z = float(delta_q[0])
+            center_shift_q_y = float(delta_q[1])
+        q_z = np.asarray(centered_detector.q_z, dtype=float)
+        q_y = np.asarray(centered_detector.q_y, dtype=float)
+
     q = np.hypot(q_z, q_y)
     theta = np.arctan2(q_y, q_z)
-    selected = np.isfinite(intensity) & (q >= q_min) & (q <= q_max)
     indices = rectangular_indices(n_max=n_max, m_max=m_max)
-
-    fit = fit_mse(
-        q[selected],
-        theta[selected],
-        intensity[selected],
-        indices,
-        q_min=q_min,
-        q_max=q_max,
+    selected = (
+        np.isfinite(q_z)
+        & np.isfinite(q_y)
+        & np.isfinite(intensity)
     )
+    if uncertainty_array is not None:
+        selected &= np.isfinite(uncertainty_array) & (uncertainty_array > 0.0)
+    if weight_array is not None:
+        selected &= np.isfinite(weight_array) & (weight_array > 0.0)
+    integrated_design = None
+    effective_weight_array = weight_array
+    if pixel_integration_subpixels is None:
+        selected &= (q >= q_min) & (q <= q_max)
+    else:
+        integrated_design = pixel_integrated_annulus_design(
+            q_z,
+            q_y,
+            indices,
+            q_min=q_min,
+            q_max=q_max,
+            subpixels=pixel_integration_subpixels,
+            chunk_size=pixel_integration_chunk_size,
+        )
+        selected &= integrated_design.selected_mask
+        effective_weight_array = integrated_design.coverage.copy()
+        if weight_array is not None:
+            effective_weight_array *= weight_array
+    if not np.any(selected):
+        raise ValueError("no valid detector values lie inside the requested annulus")
+
+    if integrated_design is not None:
+        integrated_valid = selected[integrated_design.selected_mask]
+        fit = fit_design_matrix(
+            intensity[selected],
+            indices,
+            integrated_design.design_matrix[integrated_valid],
+            uncertainty=(
+                None if uncertainty_array is None else uncertainty_array[selected]
+            ),
+            sample_weight=effective_weight_array[selected],
+            absolute_uncertainty=absolute_uncertainty,
+        )
+    elif uncertainty_array is None and effective_weight_array is None:
+        fit = fit_mse(
+            q[selected],
+            theta[selected],
+            intensity[selected],
+            indices,
+            q_min=q_min,
+            q_max=q_max,
+        )
+    else:
+        selected_uncertainty = (
+            np.ones(np.count_nonzero(selected))
+            if uncertainty_array is None
+            else uncertainty_array[selected]
+        )
+        selected_weight = (
+            None
+            if effective_weight_array is None
+            else effective_weight_array[selected]
+        )
+        fit = fit_wls(
+            q[selected],
+            theta[selected],
+            intensity[selected],
+            indices,
+            selected_uncertainty,
+            q_min=q_min,
+            q_max=q_max,
+            sample_weight=selected_weight,
+            absolute_uncertainty=(
+                absolute_uncertainty if uncertainty_array is not None else False
+            ),
+        )
     powers = angular_mode_powers(
         fit.coefficients,
         fit.indices,
         fit.coefficient_covariance,
     )
     parity_fractions = parity_power_fractions(fit.coefficients, fit.indices)
+    parity_mismatch = parity_mismatch_measures(
+        fit.coefficients,
+        fit.indices,
+        q_min=q_min,
+        q_max=q_max,
+    )
     block_tests = angular_block_tests(
         fit.coefficients,
         fit.coefficient_covariance,
         fit.indices,
-        residual_degrees_of_freedom=fit.degrees_of_freedom,
+        residual_degrees_of_freedom=(
+            fit.degrees_of_freedom
+            if fit.covariance_scaled_by_residual
+            else None
+        ),
         confidence=block_test_confidence,
     )
     selected_indices_by_threshold = {
@@ -133,11 +321,19 @@ def standard_analyzer(
     input_image = np.full(intensity.shape, np.nan)
     fit_image = np.full(intensity.shape, np.nan)
     residual_image = np.full(intensity.shape, np.nan)
+    uncertainty_image = None
+    sample_weight_image = None
     input_image[selected] = intensity[selected]
     fit_image[selected] = fit.fitted_values
     residual_image[selected] = fit.residuals
+    if uncertainty_array is not None:
+        uncertainty_image = np.full(intensity.shape, np.nan)
+        uncertainty_image[selected] = uncertainty_array[selected]
+    if effective_weight_array is not None:
+        sample_weight_image = np.zeros(intensity.shape)
+        sample_weight_image[selected] = effective_weight_array[selected]
 
-    figure = plt.figure(figsize=(14.0, 18.5), constrained_layout=True)
+    figure = plt.figure(figsize=(14.0, 20.0), constrained_layout=True)
     grid = figure.add_gridspec(5, 6)
     map_axes = [
         figure.add_subplot(grid[0, 0:2]),
@@ -157,6 +353,27 @@ def standard_analyzer(
 
     common_min = float(np.nanmin(input_image))
     common_max = float(np.nanmax(input_image))
+    intensity_norm = None
+    intensity_colorbar_label = "intensity"
+    if log_intensity_colorbar:
+        from matplotlib.colors import LogNorm
+
+        positive_intensity = np.concatenate(
+            [
+                input_image[np.isfinite(input_image) & (input_image > 0.0)],
+                fit_image[np.isfinite(fit_image) & (fit_image > 0.0)],
+            ]
+        )
+        if positive_intensity.size == 0:
+            raise ValueError(
+                "log_intensity_colorbar=True requires positive input or fit values"
+            )
+        log_minimum = float(np.min(positive_intensity))
+        log_maximum = float(np.max(positive_intensity))
+        if log_maximum <= log_minimum:
+            log_maximum = log_minimum * (1.0 + 1.0e-12)
+        intensity_norm = LogNorm(vmin=log_minimum, vmax=log_maximum)
+        intensity_colorbar_label = "intensity (log color scale)"
     residual_limit = max(float(np.nanmax(np.abs(residual_image))), np.finfo(float).eps)
 
     if intensity.ndim == 2:
@@ -169,13 +386,17 @@ def standard_analyzer(
         display_input = _orient_detector_image(q_z, q_y, input_image)
         display_fit = _orient_detector_image(q_z, q_y, fit_image)
         display_residual = _orient_detector_image(q_z, q_y, residual_image)
+        if intensity_norm is not None:
+            display_input = np.ma.masked_less_equal(display_input, 0.0)
+            display_fit = np.ma.masked_less_equal(display_fit, 0.0)
 
         input_plot = map_axes[0].imshow(
             display_input,
             origin="lower",
             extent=extent,
-            vmin=common_min,
-            vmax=common_max,
+            vmin=None if intensity_norm is not None else common_min,
+            vmax=None if intensity_norm is not None else common_max,
+            norm=intensity_norm,
             cmap="viridis",
             interpolation="nearest",
         )
@@ -183,8 +404,9 @@ def standard_analyzer(
             display_fit,
             origin="lower",
             extent=extent,
-            vmin=common_min,
-            vmax=common_max,
+            vmin=None if intensity_norm is not None else common_min,
+            vmax=None if intensity_norm is not None else common_max,
+            norm=intensity_norm,
             cmap="viridis",
             interpolation="nearest",
         )
@@ -198,24 +420,31 @@ def standard_analyzer(
             interpolation="nearest",
         )
     else:
+        scatter_input = input_image[selected]
+        scatter_fit = fit_image[selected]
+        if intensity_norm is not None:
+            scatter_input = np.ma.masked_less_equal(scatter_input, 0.0)
+            scatter_fit = np.ma.masked_less_equal(scatter_fit, 0.0)
         input_plot = map_axes[0].scatter(
             q_z[selected],
             q_y[selected],
-            c=input_image[selected],
+            c=scatter_input,
             s=5,
             linewidths=0,
-            vmin=common_min,
-            vmax=common_max,
+            vmin=None if intensity_norm is not None else common_min,
+            vmax=None if intensity_norm is not None else common_max,
+            norm=intensity_norm,
             cmap="viridis",
         )
         map_axes[1].scatter(
             q_z[selected],
             q_y[selected],
-            c=fit_image[selected],
+            c=scatter_fit,
             s=5,
             linewidths=0,
-            vmin=common_min,
-            vmax=common_max,
+            vmin=None if intensity_norm is not None else common_min,
+            vmax=None if intensity_norm is not None else common_max,
+            norm=intensity_norm,
             cmap="viridis",
         )
         residual_plot = map_axes[2].scatter(
@@ -242,7 +471,11 @@ def standard_analyzer(
             min(float(np.nanmax(q_y)), q_max),
         )
     map_axes[0].set_ylabel(r"$q_y$")
-    figure.colorbar(input_plot, ax=map_axes[:2], label="intensity")
+    figure.colorbar(
+        input_plot,
+        ax=map_axes[:2],
+        label=intensity_colorbar_label,
+    )
     figure.colorbar(residual_plot, ax=map_axes[2], label="residual")
 
     power_scale = float(max(np.max(powers.cosine), np.max(powers.sine)))
@@ -479,6 +712,13 @@ def standard_analyzer(
         for threshold in power_thresholds
     )
     full_angular_mode_count = len({n for n, _ in fit.indices})
+    centering_summary = ""
+    if beam_centering_method is not None:
+        centering_summary = (
+            "\nbeam centre: "
+            + beam_centering_method
+            + f"   delta q=({center_shift_q_z:.3e}, {center_shift_q_y:.3e})"
+        )
     figure.suptitle(
         "Power-ranked model reduction "
         f"(full basis: {len(fit.indices)} total, "
@@ -486,8 +726,13 @@ def standard_analyzer(
         + threshold_summary
         + "\n"
         + f"even power fraction: {parity_fractions.even:.6f}   "
-        + f"odd power fraction: {parity_fractions.odd:.6f}",
-        fontsize=13,
+        + f"odd power fraction: {parity_fractions.odd:.6f}"
+        + "\n"
+        + r"fit parity $\langle[I(q,\theta)-I(q,\theta+\pi)]^2\rangle_A$: "
+        + f"{parity_mismatch.mean_square:.3e}   "
+        + f"relative RMS: {parity_mismatch.normalized_rms:.4f}"
+        + centering_summary,
+        fontsize=12,
     )
 
     path = Path(output_path)
@@ -499,10 +744,73 @@ def standard_analyzer(
         fit=fit,
         powers=powers,
         parity_fractions=parity_fractions,
+        parity_mismatch=parity_mismatch,
         block_tests=block_tests,
         input_image=input_image,
         fit_image=fit_image,
         residual_image=residual_image,
+        selected_mask=selected,
+        uncertainty_image=uncertainty_image,
+        sample_weight_image=sample_weight_image,
+        beam_centering_method=beam_centering_method,
+        beam_centering_refinement=beam_centering_refinement,
+        center_shift_q_z=center_shift_q_z,
+        center_shift_q_y=center_shift_q_y,
         selected_indices_by_threshold=selected_indices_by_threshold,
         output_path=path,
     )
+
+
+def _resolve_analysis_arguments(
+    *,
+    q_range,
+    mode_limits,
+    q_min,
+    q_max,
+    n_max,
+    m_max,
+):
+    if q_range is not None:
+        if q_min is not None or q_max is not None:
+            raise ValueError("use either q_range or q_min/q_max, not both")
+        q_values = _two_values(q_range, "q_range")
+    else:
+        if q_min is None or q_max is None:
+            raise ValueError("supply q_range=(q_min, q_max)")
+        q_values = (q_min, q_max)
+
+    if mode_limits is not None:
+        if n_max is not None or m_max is not None:
+            raise ValueError("use either mode_limits or n_max/m_max, not both")
+        mode_values = _two_values(mode_limits, "mode_limits")
+    else:
+        if n_max is None or m_max is None:
+            raise ValueError("supply mode_limits=(n_max, m_max)")
+        mode_values = (n_max, m_max)
+
+    lower = float(q_values[0])
+    upper = float(q_values[1])
+    if not np.isfinite(lower) or not np.isfinite(upper):
+        raise ValueError("q_range values must be finite")
+    if lower < 0.0 or upper <= lower:
+        raise ValueError("q_range requires 0 <= q_min < q_max")
+
+    resolved_modes = []
+    for value, name in zip(mode_values, ("n_max", "m_max")):
+        if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+            raise TypeError(f"{name} must be an integer")
+        integer = int(value)
+        if integer < 0:
+            raise ValueError(f"{name} must be non-negative")
+        resolved_modes.append(integer)
+    return lower, upper, resolved_modes[0], resolved_modes[1]
+
+
+def _two_values(values, name):
+    try:
+        result = tuple(values)
+    except TypeError as error:
+        raise TypeError(f"{name} must be a two-element tuple or list") from error
+    if len(result) != 2:
+        raise ValueError(f"{name} must contain exactly two values")
+    return result

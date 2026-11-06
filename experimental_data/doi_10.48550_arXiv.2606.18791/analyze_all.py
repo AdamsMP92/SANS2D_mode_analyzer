@@ -2,9 +2,11 @@
 
 from pathlib import Path
 
-import numpy as np
-
-from sans2d_mode_analyzer import load_ill_nexus, standard_analyzer
+from sans2d_mode_analyzer import (
+    fractional_annulus_weights,
+    load_ill_nexus,
+    standard_analyzer,
+)
 
 
 dataset_directory = Path(__file__).resolve().parent
@@ -19,19 +21,19 @@ data_files = [
 
 for filename in data_files:
     data = load_ill_nexus(dataset_directory / filename)
-    intensity = np.array(data.intensity, copy=True)
-    invalid = ~np.isfinite(data.uncertainty) | (data.uncertainty <= 0.0)
-    intensity[invalid] = np.nan
 
     output = results_directory / f"{Path(filename).stem}_standard_analysis.png"
+    annulus_weight = fractional_annulus_weights(
+        data.q_z, data.q_y, q_min=0.015, q_max=0.10, subpixels=7
+    )
     standard_analyzer(
         data.q_z,
         data.q_y,
-        intensity,
-        q_min=0.015,
-        q_max=0.10,
-        n_max=25,
-        m_max=25,
+        data.intensity,
+        uncertainty=data.uncertainty,
+        sample_weight=annulus_weight,
+        q_range=(0.015, 0.10),
+        mode_limits=(25, 25),
         output_path=output,
     )
     print(f"wrote {output.relative_to(dataset_directory)}")

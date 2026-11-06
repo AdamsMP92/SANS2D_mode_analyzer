@@ -23,9 +23,10 @@ Phi_(n,m)(q, theta) = R_m(q) T_n(theta).
 ```
 
 Consequently, the product modes are orthonormal for `q dq dtheta` over the
-chosen annulus.  The fitted coefficients minimize
+chosen annulus. By default the fitted coefficients minimize
 `mean((data - design_matrix @ coefficients)**2)` over exactly the selected
-columns.
+columns. Experimental uncertainties and fractional detector-pixel weights can
+instead activate weighted least squares as described below.
 
 ## Mode-index convention
 
@@ -46,9 +47,9 @@ pixi install
 pixi run test
 pixi run example
 pixi run experimental-example
-pixi run ivan-example
-pixi run analyze-nanoflower
-pixi run analyze-ivan
+pixi run prl-example
+pixi run analyze-arxiv-2606-18791
+pixi run analyze-prl-135-196706
 ```
 
 The example creates a noisy synthetic detector pattern proportional to
@@ -68,26 +69,69 @@ onto the masked detector grid are separate short functions in
 [`synthetic_models/model_functions.py`](synthetic_models/model_functions.py).
 
 The repository also contains the supplied experimental NeXus files under
-[`experimental_data/220nm_nanoflower`](experimental_data/220nm_nanoflower).
+[`experimental_data/doi_10.48550_arXiv.2606.18791`](experimental_data/doi_10.48550_arXiv.2606.18791).
 `examples/experimental_10mT_fit.py` applies the same standard analyzer to the
-lowest-field data in the interval `0.015 <= q <= 0.050 nm^-1`.
-An additional set of four-column ASCII SANS detector data from the earlier
-MATLAB OrthoDecomp work is stored under
-[`experimental_data/ivan_orthodecomp`](experimental_data/ivan_orthodecomp).
+lowest-field data in the interval `0.015 <= q <= 0.100 nm^-1`.
+Two retained four-column ASCII SANS benchmark maps from the earlier MATLAB
+OrthoDecomp work are stored under
+[`experimental_data/doi_10.1103_5yc2-pv4y`](experimental_data/doi_10.1103_5yc2-pv4y).
 Each data set documents its own format, provenance, caveats, analysis script,
 and generated results in its local README.
-The compact `examples/experimental_ivan_000000_fit.py` example applies the
-same standard/convergence switch to `000000.dat` over the legacy interval
-`0.005 <= q <= 0.030 nm^-1`.
+The compact `examples/experimental_prl_135_196706_fit.py` example applies the
+standard analyzer to `igc_nanoporous_Fe_0p1T.dat` over the legacy numerical interval
+`0.005 <= q <= 0.030`. It writes a raw fit and a second fit after a
+parity-based centre refinement. Because the supplied data are a point list,
+the centre is estimated on a small interpolation grid, but the corrected fit
+uses the original intensities, uncertainties, and point coordinates with only
+their reciprocal-space origin shifted.
 
 ## Standard analyzer
 
 `standard_analyzer(...)` accepts either two-dimensional detector arrays or
 one-dimensional detector point lists `q_z`, `q_y`, and `intensity`. It selects
-the requested annulus, creates the complete `rectangular_indices(n_max, m_max)`
-grid, performs the MSE fit, and writes the multi-panel summary PNG. The
-returned object contains the numerical fit, reconstructed and residual data,
-and the angular powers.
+the requested `q_range=(q_min, q_max)`, creates the complete mode grid from
+`mode_limits=(n_max, m_max)`, performs the fit, and writes the multi-panel
+summary PNG. Optional
+`uncertainty` and `sample_weight` arrays change the fit metric to
+
+```text
+sum_p sample_weight[p] * ((data[p] - fit[p]) / uncertainty[p])**2.
+```
+
+The returned object contains the numerical fit, reconstructed and residual
+data, selection mask, effective weights, and angular powers.
+
+Set `beam_centering=True` to run parity-based centering immediately before the
+standard fit. The analyzer dispatches from the input shape: a one-dimensional
+detector point list uses `center_point_cloud_by_parity(...)`, while a
+two-dimensional affine detector grid uses `refine_center_by_parity(...)`
+directly. Experimental uncertainties are required. The result records the
+method, reciprocal-space shift, and complete refinement diagnostic as
+`beam_centering_method`, `center_shift_q_z`, `center_shift_q_y`, and
+`beam_centering_refinement`.
+
+```python
+centered = standard_analyzer(
+    data.q_z,
+    data.q_y,
+    data.intensity,
+    uncertainty=data.uncertainty,
+    beam_centering=True,
+    q_range=(0.005, 0.030),
+    mode_limits=(12, 8),
+)
+```
+
+If externally supplied `sample_weight` values depend on the annulus geometry,
+they should be recomputed after centering or replaced by the internal
+`pixel_integration_subpixels` path. Detector-efficiency weights that are tied
+to detector entries rather than reciprocal coordinates remain applicable.
+
+Set `log_intensity_colorbar=True` to display the input signal and mode fit with
+one shared logarithmic color scale. This option affects only these two panels.
+Finite nonpositive corrected intensities remain selected and fitted, but are
+masked in the logarithmic display because they have no real logarithm. The
+signed residual panel retains its linear diverging scale.
 
 For a fitted coefficient vector, `angular_mode_powers(coefficients, indices)`
 computes
@@ -133,14 +177,89 @@ the odd fraction can serve as a neutral symmetry-violation diagnostic.  It is
 not universally a signal-quality measure, for example when a physical chiral
 contribution is allowed in an individual polarized channel.
 
+The header additionally reports the fit-based area-averaged parity mismatch
+
+```text
+(1 / A) integral_A [I(q, theta) - I(q, theta + pi)]^2 q dq dtheta
+```
+
+and its dimensionless relative RMS. Parseval's identity gives the exact
+relations `mean_square = 4 * odd_power / A` and
+`relative_rms = 2 * sqrt(odd_power_fraction)` for the fitted expansion. The
+first value retains intensity-squared units and is therefore not comparable
+between arbitrary intensity normalizations. The relative RMS is scale-free,
+but is not statistically independent of the already reported odd-power
+fraction and remains conditional on the selected basis truncation.
+
 `angular_block_tests(...)` jointly tests all radial coefficients belonging to
 one angular order and one trigonometric branch.  For a coefficient block
 `c_n` with covariance `C_n`, it evaluates
-`T_n = c_n.T @ inverse(C_n) @ c_n`.  The standard analyzer compares the
-cosine and sine statistics with their 95% F-test thresholds in a separate plot
-row.  A point above its threshold rejects the joint null hypothesis that all
-radial coefficients of that angular contribution are zero, conditional on the
-ordinary least-squares noise model.
+`T_n = c_n.T @ inverse(C_n) @ c_n`. When absolute experimental uncertainties
+are supplied, the statistic is compared with its chi-squared threshold. When
+the covariance scale is estimated from the residuals, the corresponding
+finite-residual-degree-of-freedom F threshold is used. A point above its
+threshold rejects the joint null hypothesis that all radial coefficients of
+that angular contribution are zero, conditional on the selected least-squares
+noise model.
+
+## Detector-data preconditioning
+
+Preconditioners are explicit functions rather than hidden steps inside the
+analyzer. Finite negative and zero background-corrected intensities are never
+removed automatically. The public functions include:
+
+- `valid_pixel_mask(...)` for finite coordinates/intensities and positive
+  uncertainties;
+- `fractional_annulus_weights(...)` for subpixel coverage of circular annulus
+  boundaries;
+- `pixel_integrated_annulus_design(...)` for a memory-bounded, subpixel-averaged
+  basis matrix;
+- `refine_center_by_parity(...)` and `apply_center_correction(...)` for a common
+  detector-index centre correction;
+- `center_point_cloud_by_parity(...)` for the standard auxiliary-grid centre
+  refinement of detector point lists while preserving their original samples;
+- `symmetry_diagnostic(...)` for parity or field-axis mirror residuals;
+- `symmetry_fold(...)` for optional inverse-variance orbit averaging;
+- `mask_symmetry_diagnostic(...)` for mask centroid and point-reflection checks;
+- `rotate_coordinates(...)`, `rescale_intensity(...)`, and
+  `standardized_residual_outliers(...)` for explicit coordinate, numerical,
+  and diagnostic operations.
+
+For a weighted detector fit with fractional annulus boundaries:
+
+```python
+from sans2d_mode_analyzer import fractional_annulus_weights, standard_analyzer
+
+area = fractional_annulus_weights(
+    data.q_z,
+    data.q_y,
+    q_min=0.015,
+    q_max=0.050,
+    subpixels=7,
+)
+result = standard_analyzer(
+    data.q_z,
+    data.q_y,
+    data.intensity,
+    uncertainty=data.uncertainty,
+    sample_weight=area,
+    q_range=(0.015, 0.050),
+    mode_limits=(8, 4),
+)
+```
+
+Set `pixel_integration_subpixels=7` to average each basis function over the
+admitted part of every pixel. This is more precise but intentionally not the
+default because its cost scales with the number of subpixels and fitted modes.
+
+Parity folding assumes `I(q, theta) = I(q, theta + pi)`. Mirror folding adds
+`I(q, theta) = I(q, -theta)`. These operations therefore impose physical
+assumptions and are never applied automatically. Interpolation also creates
+neighbouring-pixel correlations not contained in the returned diagonal
+uncertainties; folded data are primarily intended for visualization and
+sensitivity checks. For formal inference, selecting the corresponding
+symmetry-constrained mode indices while retaining the original pixels is
+usually preferable.
 
 ## Mode-convergence test
 
@@ -155,10 +274,8 @@ convergence = mode_convergence_standard_analyzer(
     q_z,
     q_y,
     intensity,
-    q_min=0.015,
-    q_max=0.050,
-    n_max_limit=10,
-    m_max_limit=10,
+    q_range=(0.015, 0.050),
+    mode_limits=(10, 10),
     prediction_tolerance=0.01,
     coefficient_tolerance=0.05,
     relative_mse_tolerance=0.001,

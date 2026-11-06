@@ -39,6 +39,17 @@ class ParityPowerFractions:
     total_power: float
 
 
+@dataclass(frozen=True)
+class ParityMismatchMeasures:
+    """Fit-based area-averaged and scale-free parity mismatch."""
+
+    area: float
+    mean_square: float
+    rms: float
+    normalized_mean_square: float
+    normalized_rms: float
+
+
 def angular_mode_powers(
     coefficients: ArrayLike,
     indices: Iterable[Sequence[int]],
@@ -149,6 +160,49 @@ def parity_power_fractions(
         even=float(even_power / total_power),
         odd=float(odd_power / total_power),
         total_power=total_power,
+    )
+
+
+def parity_mismatch_measures(
+    coefficients: ArrayLike,
+    indices: Iterable[Sequence[int]],
+    *,
+    q_min: float,
+    q_max: float,
+) -> ParityMismatchMeasures:
+    r"""Evaluate the fitted parity mismatch analytically by Parseval's identity.
+
+    For the orthonormal annulus expansion, every odd angular mode changes sign
+    under :math:`\theta\mapsto\theta+\pi`. Therefore
+
+    .. math::
+
+       \int_{\mathcal A}[I(q,\theta)-I(q,\theta+\pi)]^2\,d^2q
+       =4\sum_{|n|\ \mathrm{odd},m}c_{nm}^2.
+
+    ``mean_square`` is the user's area-normalized quantity and retains units
+    of intensity squared. ``normalized_mean_square`` divides once more by
+    :math:`\int_{\mathcal A}I^2d^2q`; its square root is a dimensionless
+    relative RMS mismatch. All values refer to the truncated fitted expansion,
+    not directly paired raw detector pixels.
+    """
+    lower = float(q_min)
+    upper = float(q_max)
+    if not np.isfinite(lower) or not np.isfinite(upper):
+        raise ValueError("q_min and q_max must be finite")
+    if lower < 0.0 or upper <= lower:
+        raise ValueError("require 0 <= q_min < q_max")
+    fractions = parity_power_fractions(coefficients, indices)
+    area = float(np.pi * (upper**2 - lower**2))
+    integrated_mismatch = 4.0 * fractions.odd * fractions.total_power
+    mean_square = integrated_mismatch / area
+    normalized_mean_square = integrated_mismatch / fractions.total_power
+    return ParityMismatchMeasures(
+        area=area,
+        mean_square=float(mean_square),
+        rms=float(np.sqrt(mean_square)),
+        normalized_mean_square=float(normalized_mean_square),
+        normalized_rms=float(np.sqrt(normalized_mean_square)),
     )
 
 

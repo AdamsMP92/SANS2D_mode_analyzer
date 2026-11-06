@@ -42,8 +42,7 @@ def load_ill_nexus(path: str | Path, q_scale: float = 10.0) -> DetectorData:
 def load_ascii_detector_data(path: str | Path) -> DetectorData:
     """Load an ASCII point list with columns ``q_z q_y I uncertainty``.
 
-    Nonnumeric lines, including the ``ASCII data`` header in one of the
-    bundled Ivan data files, are skipped.
+    Nonnumeric lines, including legacy ``ASCII data`` headers, are skipped.
     """
     rows: list[tuple[float, float, float, float]] = []
     with Path(path).open(errors="replace") as stream:

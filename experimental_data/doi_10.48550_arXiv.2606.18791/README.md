@@ -28,14 +28,15 @@ The data are associated with the following preprint:
 Run all four fields from the repository root with
 
 ```text
-pixi run analyze-nanoflower
+pixi run analyze-arxiv-2606-18791
 ```
 
 The script [`analyze_all.py`](analyze_all.py) applies the full rectangular
-mode basis with `n_max = 8` and `m_max = 8` over
-`0.015 <= q <= 0.050 nm^-1`. Detector entries with nonfinite intensity or
-nonpositive/nonfinite supplied uncertainty are omitted. The fit itself is
-currently unweighted.
+mode basis with `mode_limits=(25, 25)` over
+`q_range=(0.015, 0.100)` in `nm^-1`. Detector entries with nonfinite intensity or
+nonpositive/nonfinite supplied uncertainty are omitted. The supplied
+uncertainties are used in a weighted least-squares fit, and the circular
+annulus boundary is represented by `7 x 7` subpixel fractional-area weights.
 
 No refined scattering-centre correction, parity folding, or
 polarization-channel reconstruction is applied. The resulting PNG summaries

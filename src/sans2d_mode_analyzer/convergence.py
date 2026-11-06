@@ -10,7 +10,11 @@ from numpy.typing import ArrayLike, NDArray
 
 from .basis import design_matrix
 from .indices import rectangular_indices
-from .standard_analyzer import StandardAnalysisResult, standard_analyzer
+from .standard_analyzer import (
+    StandardAnalysisResult,
+    _resolve_analysis_arguments,
+    standard_analyzer,
+)
 
 
 @dataclass(frozen=True)
@@ -37,10 +41,15 @@ def mode_convergence_standard_analyzer(
     q_y: ArrayLike,
     intensity: ArrayLike,
     *,
-    q_min: float,
-    q_max: float,
-    n_max_limit: int,
-    m_max_limit: int,
+    q_range: tuple[float, float] | list[float] | None = None,
+    mode_limits: tuple[int, int] | list[int] | None = None,
+    q_min: float | None = None,
+    q_max: float | None = None,
+    n_max_limit: int | None = None,
+    m_max_limit: int | None = None,
+    uncertainty: ArrayLike | None = None,
+    sample_weight: ArrayLike | None = None,
+    absolute_uncertainty: bool = True,
     n_min: int = 0,
     m_min: int = 0,
     prediction_tolerance: float = 0.01,
@@ -50,7 +59,9 @@ def mode_convergence_standard_analyzer(
 ) -> ModeConvergenceResult:
     """Find the smallest stable rectangular angular/radial truncation.
 
-    Every integer pair in ``[n_min, n_max_limit]`` and
+    ``q_range`` and ``mode_limits`` use the same preferred pair syntax as
+    :func:`standard_analyzer`; here ``mode_limits`` contains the largest
+    tested ``(n_max, m_max)`` pair. Every integer pair in ``[n_min, n_max_limit]`` and
     ``[m_min, m_max_limit]`` is fitted.  The largest pair is the reference.
     A candidate is stable when all of the following are below tolerance:
 
@@ -68,6 +79,14 @@ def mode_convergence_standard_analyzer(
     its tested upper limit, because stability beyond that boundary has not
     been demonstrated.
     """
+    q_min, q_max, n_max_limit, m_max_limit = _resolve_analysis_arguments(
+        q_range=q_range,
+        mode_limits=mode_limits,
+        q_min=q_min,
+        q_max=q_max,
+        n_max=n_max_limit,
+        m_max=m_max_limit,
+    )
     lower_n, upper_n = _integer_interval(n_min, n_max_limit, "n")
     lower_m, upper_m = _integer_interval(m_min, m_max_limit, "m")
     prediction_limit = _positive_tolerance(
@@ -85,6 +104,16 @@ def mode_convergence_standard_analyzer(
         np.asarray(q_y, dtype=float),
         np.asarray(intensity, dtype=float),
     )
+    uncertainty_array = None
+    if uncertainty is not None:
+        uncertainty_array = np.broadcast_to(
+            np.asarray(uncertainty, dtype=float), intensity_array.shape
+        )
+    weight_array = None
+    if sample_weight is not None:
+        weight_array = np.broadcast_to(
+            np.asarray(sample_weight, dtype=float), intensity_array.shape
+        )
     if intensity_array.ndim not in (1, 2):
         raise ValueError(
             "mode_convergence_standard_analyzer expects a detector point list "
@@ -100,6 +129,10 @@ def mode_convergence_standard_analyzer(
         & (q >= q_min)
         & (q <= q_max)
     )
+    if uncertainty_array is not None:
+        selected &= np.isfinite(uncertainty_array) & (uncertainty_array > 0.0)
+    if weight_array is not None:
+        selected &= np.isfinite(weight_array) & (weight_array > 0.0)
     q_selected = q[selected]
     theta_selected = theta[selected]
     values = intensity_array[selected]
@@ -119,8 +152,16 @@ def mode_convergence_standard_analyzer(
             "the reference model must contain fewer modes than detector values"
         )
 
+    whitening = np.ones(values.shape)
+    if uncertainty_array is not None:
+        whitening /= uncertainty_array[selected]
+    if weight_array is not None:
+        whitening *= np.sqrt(weight_array[selected])
+    weighted_reference_matrix = whitening[:, None] * reference_matrix
+    weighted_values = whitening * values
+
     reference_coefficients, _, reference_rank, _ = np.linalg.lstsq(
-        reference_matrix, values, rcond=None
+        weighted_reference_matrix, weighted_values, rcond=None
     )
     if reference_rank != len(reference_indices):
         raise ValueError("the maximum tested design matrix is rank deficient")
@@ -152,8 +193,9 @@ def mode_convergence_standard_analyzer(
             candidate_indices = rectangular_indices(int(n_max), int(m_max))
             columns = [reference_position[mode] for mode in candidate_indices]
             candidate_matrix = reference_matrix[:, columns]
+            weighted_candidate_matrix = weighted_reference_matrix[:, columns]
             coefficients, _, rank, _ = np.linalg.lstsq(
-                candidate_matrix, values, rcond=None
+                weighted_candidate_matrix, weighted_values, rcond=None
             )
             if rank != len(candidate_indices):
                 raise ValueError(
@@ -203,10 +245,11 @@ def mode_convergence_standard_analyzer(
         q_z_array,
         q_y_array,
         intensity_array,
-        q_min=q_min,
-        q_max=q_max,
-        n_max=chosen_n,
-        m_max=chosen_m,
+        uncertainty=uncertainty_array,
+        sample_weight=weight_array,
+        absolute_uncertainty=absolute_uncertainty,
+        q_range=(q_min, q_max),
+        mode_limits=(chosen_n, chosen_m),
         output_path=output_path,
     )
 
