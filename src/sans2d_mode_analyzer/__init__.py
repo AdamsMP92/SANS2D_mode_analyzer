@@ -32,6 +32,7 @@ from .power import (
 )
 from .preconditioning import (
     AffineDetectorGeometry,
+    CartesianBinnedGrid,
     CenterRefinementResult,
     MaskSymmetryDiagnostic,
     PixelIntegratedAnnulus,
@@ -40,6 +41,7 @@ from .preconditioning import (
     affine_detector_geometry,
     apply_center_correction,
     apply_q_center_correction,
+    cartesian_bin_average,
     center_point_cloud_by_parity,
     fractional_annulus_weights,
     mask_symmetry_diagnostic,
@@ -65,6 +67,7 @@ __all__ = [
     "AngularBlockTests",
     "AngularRadialSpectra",
     "AffineDetectorGeometry",
+    "CartesianBinnedGrid",
     "CenterRefinementResult",
     "MaskSymmetryDiagnostic",
     "PixelIntegratedAnnulus",
@@ -84,6 +87,7 @@ __all__ = [
     "evaluate_expansion",
     "apply_center_correction",
     "apply_q_center_correction",
+    "cartesian_bin_average",
     "center_point_cloud_by_parity",
     "even_angular_indices",
     "fit_mse",

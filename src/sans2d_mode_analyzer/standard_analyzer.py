@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from .basis import evaluate_expansion
 from .block_test import AngularBlockTests, angular_block_tests
 from .fit import MSEFitResult, fit_design_matrix, fit_mse, fit_wls
 from .indices import ModeIndex, rectangular_indices
@@ -29,7 +30,7 @@ from .preconditioning import (
     pixel_integrated_annulus_design,
     refine_center_by_parity,
 )
-from .spectra import angular_radial_spectra
+from .spectra import AngularRadialSpectra, angular_radial_spectra
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class StandardAnalysisResult:
 
     fit: MSEFitResult
     powers: AngularModePowers
+    spectra: AngularRadialSpectra
     parity_fractions: ParityPowerFractions
     parity_mismatch: ParityMismatchMeasures
     block_tests: AngularBlockTests
@@ -52,6 +54,10 @@ class StandardAnalysisResult:
     center_shift_q_z: float
     center_shift_q_y: float
     selected_indices_by_threshold: dict[float, tuple[ModeIndex, ...]]
+    reconstruction_threshold: float
+    reconstruction_indices: tuple[ModeIndex, ...]
+    reconstruction_image: NDArray[np.float64]
+    reconstruction_spectra: AngularRadialSpectra
     output_path: Path
 
 
@@ -111,6 +117,7 @@ def standard_analyzer(
     pixel_integration_subpixels: int | None = None,
     pixel_integration_chunk_size: int = 512,
     power_thresholds: tuple[float, ...] = (0.95, 0.98, 0.99),
+    reconstruction_threshold: float = 0.95,
     block_test_confidence: float = 0.95,
     output_path: str | Path = "standard_analysis.png",
 ) -> StandardAnalysisResult:
@@ -132,6 +139,10 @@ def standard_analyzer(
     ``log_intensity_colorbar=True`` changes only the shared display norm of
     the input and fitted intensity panels; nonpositive display values are
     masked but remain included in the numerical fit.
+    ``reconstruction_threshold`` selects the smallest power-ranked subset
+    carrying at least that fraction of the fitted modal Parseval power.  Its
+    two-dimensional reconstruction and radial spectra are shown in the final
+    plot row and returned with the numerical result.
     """
     import matplotlib.pyplot as plt
 
@@ -223,6 +234,7 @@ def standard_analyzer(
     if weight_array is not None:
         selected &= np.isfinite(weight_array) & (weight_array > 0.0)
     integrated_design = None
+    selected_design_matrix = None
     effective_weight_array = weight_array
     if pixel_integration_subpixels is None:
         selected &= (q >= q_min) & (q <= q_max)
@@ -245,10 +257,11 @@ def standard_analyzer(
 
     if integrated_design is not None:
         integrated_valid = selected[integrated_design.selected_mask]
+        selected_design_matrix = integrated_design.design_matrix[integrated_valid]
         fit = fit_design_matrix(
             intensity[selected],
             indices,
-            integrated_design.design_matrix[integrated_valid],
+            selected_design_matrix,
             uncertainty=(
                 None if uncertainty_array is None else uncertainty_array[selected]
             ),
@@ -317,15 +330,50 @@ def standard_analyzer(
         )
         for threshold in power_thresholds
     }
+    reconstruction_fraction = float(reconstruction_threshold)
+    reconstruction_indices = tuple(
+        power_model_selector(
+            fit.coefficients,
+            fit.indices,
+            reconstruction_fraction,
+        )
+    )
+    position_by_index = {
+        index: position for position, index in enumerate(fit.indices)
+    }
+    reconstruction_positions = np.asarray(
+        [position_by_index[index] for index in reconstruction_indices],
+        dtype=int,
+    )
+    reconstruction_coefficients = fit.coefficients[reconstruction_positions]
+    reconstruction_covariance = fit.coefficient_covariance[
+        np.ix_(reconstruction_positions, reconstruction_positions)
+    ]
+    if selected_design_matrix is None:
+        reconstruction_values = evaluate_expansion(
+            q[selected],
+            theta[selected],
+            reconstruction_coefficients,
+            reconstruction_indices,
+            q_min=q_min,
+            q_max=q_max,
+        )
+    else:
+        reconstruction_values = (
+            selected_design_matrix[:, reconstruction_positions]
+            @ reconstruction_coefficients
+        )
 
     input_image = np.full(intensity.shape, np.nan)
     fit_image = np.full(intensity.shape, np.nan)
     residual_image = np.full(intensity.shape, np.nan)
+    reconstruction_image = np.full(intensity.shape, np.nan)
     uncertainty_image = None
     sample_weight_image = None
     input_image[selected] = intensity[selected]
     fit_image[selected] = fit.fitted_values
     residual_image[selected] = fit.residuals
+    reconstruction_image[selected] = reconstruction_values
     if uncertainty_array is not None:
         uncertainty_image = np.full(intensity.shape, np.nan)
         uncertainty_image[selected] = uncertainty_array[selected]
@@ -333,8 +381,8 @@ def standard_analyzer(
         sample_weight_image = np.zeros(intensity.shape)
         sample_weight_image[selected] = effective_weight_array[selected]
 
-    figure = plt.figure(figsize=(14.0, 20.0), constrained_layout=True)
-    grid = figure.add_gridspec(5, 6)
+    figure = plt.figure(figsize=(16.0, 24.0), constrained_layout=True)
+    grid = figure.add_gridspec(6, 6)
     map_axes = [
         figure.add_subplot(grid[0, 0:2]),
         figure.add_subplot(grid[0, 2:4]),
@@ -350,6 +398,9 @@ def standard_analyzer(
     sine_map_axis = figure.add_subplot(grid[3, 3:6])
     cosine_spectra_axis = figure.add_subplot(grid[4, 0:3])
     sine_spectra_axis = figure.add_subplot(grid[4, 3:6])
+    reconstruction_axis = figure.add_subplot(grid[5, 0:2])
+    reconstruction_cosine_axis = figure.add_subplot(grid[5, 2:4])
+    reconstruction_sine_axis = figure.add_subplot(grid[5, 4:6])
 
     common_min = float(np.nanmin(input_image))
     common_max = float(np.nanmax(input_image))
@@ -477,6 +528,62 @@ def standard_analyzer(
         label=intensity_colorbar_label,
     )
     figure.colorbar(residual_plot, ax=map_axes[2], label="residual")
+
+    if intensity.ndim == 2:
+        display_reconstruction = _orient_detector_image(
+            q_z, q_y, reconstruction_image
+        )
+        if intensity_norm is not None:
+            display_reconstruction = np.ma.masked_less_equal(
+                display_reconstruction, 0.0
+            )
+        reconstruction_plot = reconstruction_axis.imshow(
+            display_reconstruction,
+            origin="lower",
+            extent=extent,
+            vmin=None if intensity_norm is not None else common_min,
+            vmax=None if intensity_norm is not None else common_max,
+            norm=intensity_norm,
+            cmap="viridis",
+            interpolation="nearest",
+        )
+    else:
+        scatter_reconstruction = reconstruction_image[selected]
+        if intensity_norm is not None:
+            scatter_reconstruction = np.ma.masked_less_equal(
+                scatter_reconstruction, 0.0
+            )
+        reconstruction_plot = reconstruction_axis.scatter(
+            q_z[selected],
+            q_y[selected],
+            c=scatter_reconstruction,
+            s=5,
+            linewidths=0,
+            vmin=None if intensity_norm is not None else common_min,
+            vmax=None if intensity_norm is not None else common_max,
+            norm=intensity_norm,
+            cmap="viridis",
+        )
+    reconstruction_axis.set_title(
+        f"{reconstruction_fraction:.0%} fitted-power reconstruction\n"
+        f"{len(reconstruction_indices)} modes"
+    )
+    reconstruction_axis.set_xlabel(r"$q_z$")
+    reconstruction_axis.set_ylabel(r"$q_y$")
+    reconstruction_axis.set_aspect("equal")
+    reconstruction_axis.set_xlim(
+        max(float(np.nanmin(q_z)), -q_max),
+        min(float(np.nanmax(q_z)), q_max),
+    )
+    reconstruction_axis.set_ylim(
+        max(float(np.nanmin(q_y)), -q_max),
+        min(float(np.nanmax(q_y)), q_max),
+    )
+    figure.colorbar(
+        reconstruction_plot,
+        ax=reconstruction_axis,
+        label=intensity_colorbar_label,
+    )
 
     power_scale = float(max(np.max(powers.cosine), np.max(powers.sine)))
     cosine_fraction = powers.cosine / power_scale
@@ -701,9 +808,90 @@ def standard_analyzer(
         axis.set_title(title)
         axis.set_xlabel("q")
         axis.set_ylabel(r"$I_n(q)$")
+        axis.set_xlim(q_min, q_max)
         axis.axhline(0.0, color="black", linewidth=0.7)
         axis.grid(alpha=0.25)
         axis.legend(ncol=3, fontsize=7)
+
+    reconstruction_spectra = angular_radial_spectra(
+        q_spectrum,
+        reconstruction_coefficients,
+        reconstruction_indices,
+        q_min=q_min,
+        q_max=q_max,
+        coefficient_covariance=reconstruction_covariance,
+    )
+    assert reconstruction_spectra.cosine_uncertainty is not None
+    assert reconstruction_spectra.sine_uncertainty is not None
+    reconstruction_cosine_orders = sorted(
+        {n for n, _ in reconstruction_indices if n >= 0}
+    )
+    reconstruction_sine_orders = sorted(
+        {abs(n) for n, _ in reconstruction_indices if n < 0}
+    )
+    for order in reconstruction_cosine_orders:
+        color = colors(int(order) % 10)
+        values = reconstruction_spectra.cosine[order]
+        uncertainty_values = reconstruction_spectra.cosine_uncertainty[order]
+        reconstruction_cosine_axis.plot(
+            reconstruction_spectra.q,
+            values,
+            label=f"n={order}",
+            color=color,
+        )
+        reconstruction_cosine_axis.fill_between(
+            reconstruction_spectra.q,
+            values - uncertainty_values,
+            values + uncertainty_values,
+            color=color,
+            alpha=0.18,
+            linewidth=0.0,
+        )
+    for order in reconstruction_sine_orders:
+        color = colors(int(order) % 10)
+        values = reconstruction_spectra.sine[order]
+        uncertainty_values = reconstruction_spectra.sine_uncertainty[order]
+        reconstruction_sine_axis.plot(
+            reconstruction_spectra.q,
+            values,
+            label=f"n={order}",
+            color=color,
+        )
+        reconstruction_sine_axis.fill_between(
+            reconstruction_spectra.q,
+            values - uncertainty_values,
+            values + uncertainty_values,
+            color=color,
+            alpha=0.18,
+            linewidth=0.0,
+        )
+    for axis, title in zip(
+        [reconstruction_cosine_axis, reconstruction_sine_axis],
+        [
+            rf"selected $I_n^c(q)$ ({reconstruction_fraction:.0%} power)",
+            rf"selected $I_n^s(q)$ ({reconstruction_fraction:.0%} power)",
+        ],
+    ):
+        axis.set_title(title)
+        axis.set_xlabel("q")
+        axis.set_ylabel(r"$I_n(q)$")
+        axis.set_xlim(q_min, q_max)
+        axis.axhline(0.0, color="black", linewidth=0.7)
+        axis.grid(alpha=0.25)
+    if reconstruction_cosine_orders:
+        reconstruction_cosine_axis.legend(ncol=2, fontsize=7)
+    else:
+        reconstruction_cosine_axis.text(
+            0.5, 0.5, "no cosine modes selected", ha="center", va="center",
+            transform=reconstruction_cosine_axis.transAxes,
+        )
+    if reconstruction_sine_orders:
+        reconstruction_sine_axis.legend(ncol=2, fontsize=7)
+    else:
+        reconstruction_sine_axis.text(
+            0.5, 0.5, "no sine modes selected", ha="center", va="center",
+            transform=reconstruction_sine_axis.transAxes,
+        )
 
     threshold_summary = "   ".join(
         f"[{threshold:.0%}: "
@@ -743,6 +931,7 @@ def standard_analyzer(
     return StandardAnalysisResult(
         fit=fit,
         powers=powers,
+        spectra=spectra,
         parity_fractions=parity_fractions,
         parity_mismatch=parity_mismatch,
         block_tests=block_tests,
@@ -757,6 +946,10 @@ def standard_analyzer(
         center_shift_q_z=center_shift_q_z,
         center_shift_q_y=center_shift_q_y,
         selected_indices_by_threshold=selected_indices_by_threshold,
+        reconstruction_threshold=reconstruction_fraction,
+        reconstruction_indices=reconstruction_indices,
+        reconstruction_image=reconstruction_image,
+        reconstruction_spectra=reconstruction_spectra,
         output_path=path,
     )
 

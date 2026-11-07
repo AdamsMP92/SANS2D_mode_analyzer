@@ -48,6 +48,7 @@ pixi run test
 pixi run example
 pixi run experimental-example
 pixi run prl-example
+pixi run numagsans-example
 pixi run analyze-arxiv-2606-18791
 pixi run analyze-prl-135-196706
 ```
@@ -85,13 +86,37 @@ the centre is estimated on a small interpolation grid, but the corrected fit
 uses the original intensities, uncertainties, and point coordinates with only
 their reciprocal-space origin shifted.
 
+`examples/numagsans_ivr40_3_spin_flip_fit.py` analyzes and compares the
+simulated average spin-flip cross section `S_sf` from the IVR40 output indices
+1 and 2. The original NuMagSANS output is a very fine `1000 x 1000` polar
+product grid. The retained CSV files contain only `qz`, `qy`, `q`, `theta`,
+and `S_sf`. The example removes the duplicated `theta = 2 pi` endpoint and
+area-averages the polar samples onto an equally spaced `161 x 161` Cartesian
+grid. The polar source samples are weighted by `q`, which accounts for the
+Jacobian of `q dq dtheta`; the resulting square cells can then be analyzed as
+ordinary equal-area detector pixels. The derived maps are stored as
+`SANS2D_cartesian.csv`. The example writes one standard-analysis overview per
+data set and a direct comparison of the fitted radial spectra `I_0^c(q)` and
+`I_2^c(q)`. Since these deterministic simulation data have no experimental
+uncertainty column, fit-uncertainty diagnostics are conditional on the
+residual of the finite mode truncation.
+
 ## Standard analyzer
 
 `standard_analyzer(...)` accepts either two-dimensional detector arrays or
 one-dimensional detector point lists `q_z`, `q_y`, and `intensity`. It selects
 the requested `q_range=(q_min, q_max)`, creates the complete mode grid from
 `mode_limits=(n_max, m_max)`, performs the fit, and writes the multi-panel
-summary PNG. Optional
+summary PNG. The returned result exposes the plotted radial coefficient
+functions and their propagated uncertainties directly as `result.spectra`.
+For example, `result.spectra.cosine[0]` and
+`result.spectra.cosine[2]` contain `I_0^c(q)` and `I_2^c(q)` on
+`result.spectra.q`. The final summary row shows a reduced two-dimensional
+reconstruction and its selected cosine and sine radial spectra. It retains the
+smallest power-ranked mode set carrying `reconstruction_threshold=0.95` of the
+fitted modal Parseval power by default; the threshold is configurable. The
+same data are returned as `result.reconstruction_image`,
+`result.reconstruction_indices`, and `result.reconstruction_spectra`. Optional
 `uncertainty` and `sample_weight` arrays change the fit metric to
 
 ```text

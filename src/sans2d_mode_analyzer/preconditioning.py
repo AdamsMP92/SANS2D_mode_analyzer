@@ -82,6 +82,103 @@ class PointCloudCenteringResult:
     delta_q_y: float
 
 
+@dataclass(frozen=True)
+class CartesianBinnedGrid:
+    """Area-binned values on an equally spaced Cartesian reciprocal-space grid."""
+
+    q_z: NDArray[np.float64]
+    q_y: NDArray[np.float64]
+    intensity: NDArray[np.float64]
+    source_count: NDArray[np.int64]
+    source_weight: NDArray[np.float64]
+
+
+def cartesian_bin_average(
+    q_z: ArrayLike,
+    q_y: ArrayLike,
+    intensity: ArrayLike,
+    *,
+    q_extent: float,
+    grid_size: int = 161,
+    source_weight: ArrayLike | None = None,
+) -> CartesianBinnedGrid:
+    """Average point samples into equal-area Cartesian square cells.
+
+    ``source_weight`` supplies the quadrature weight of each source sample.
+    For samples that are uniform in polar ``(q, theta)`` coordinates, use
+    ``source_weight=q`` to account for the area element ``q dq dtheta``.
+    """
+    q_z_array, q_y_array, intensity_array = np.broadcast_arrays(
+        np.asarray(q_z, dtype=float),
+        np.asarray(q_y, dtype=float),
+        np.asarray(intensity, dtype=float),
+    )
+    extent = float(q_extent)
+    if not np.isfinite(extent) or extent <= 0.0:
+        raise ValueError("q_extent must be finite and positive")
+    if isinstance(grid_size, bool) or not isinstance(grid_size, (int, np.integer)):
+        raise TypeError("grid_size must be an integer")
+    size = int(grid_size)
+    if size < 2:
+        raise ValueError("grid_size must be at least two")
+
+    if source_weight is None:
+        weight_array = np.ones(q_z_array.shape, dtype=float)
+    else:
+        weight_array = np.broadcast_to(
+            np.asarray(source_weight, dtype=float), q_z_array.shape
+        )
+        finite_weight = weight_array[np.isfinite(weight_array)]
+        if np.any(finite_weight < 0.0):
+            raise ValueError("source_weight must be non-negative")
+
+    axis = np.linspace(-extent, extent, size)
+    spacing = float(axis[1] - axis[0])
+    lower_edge = float(axis[0] - 0.5 * spacing)
+    upper_edge = float(axis[-1] + 0.5 * spacing)
+
+    valid = (
+        np.isfinite(q_z_array)
+        & np.isfinite(q_y_array)
+        & np.isfinite(intensity_array)
+        & np.isfinite(weight_array)
+        & (weight_array > 0.0)
+        & (q_z_array >= lower_edge)
+        & (q_z_array < upper_edge)
+        & (q_y_array >= lower_edge)
+        & (q_y_array < upper_edge)
+    )
+    if not np.any(valid):
+        raise ValueError("no positively weighted source samples lie on the grid")
+
+    column = np.floor((q_z_array[valid] - lower_edge) / spacing).astype(int)
+    row = np.floor((q_y_array[valid] - lower_edge) / spacing).astype(int)
+    flat_index = row * size + column
+    flat_weight = weight_array[valid]
+    number_of_cells = size * size
+    weight_sum = np.bincount(
+        flat_index, weights=flat_weight, minlength=number_of_cells
+    )
+    weighted_intensity = np.bincount(
+        flat_index,
+        weights=flat_weight * intensity_array[valid],
+        minlength=number_of_cells,
+    )
+    source_count = np.bincount(flat_index, minlength=number_of_cells)
+
+    binned_intensity = np.full(number_of_cells, np.nan)
+    occupied = weight_sum > 0.0
+    binned_intensity[occupied] = weighted_intensity[occupied] / weight_sum[occupied]
+    grid_q_z, grid_q_y = np.meshgrid(axis, axis)
+    return CartesianBinnedGrid(
+        q_z=grid_q_z,
+        q_y=grid_q_y,
+        intensity=binned_intensity.reshape(size, size),
+        source_count=source_count.reshape(size, size),
+        source_weight=weight_sum.reshape(size, size),
+    )
+
+
 def valid_pixel_mask(data: DetectorData) -> NDArray[np.bool_]:
     """Select finite pixels with positive uncertainty.
 

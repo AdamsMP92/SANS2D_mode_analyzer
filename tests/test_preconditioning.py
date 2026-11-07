@@ -4,6 +4,7 @@ from sans2d_mode_analyzer import (
     DetectorData,
     apply_center_correction,
     apply_q_center_correction,
+    cartesian_bin_average,
     center_point_cloud_by_parity,
     fractional_annulus_weights,
     mask_symmetry_diagnostic,
@@ -14,6 +15,24 @@ from sans2d_mode_analyzer import (
     symmetry_fold,
     valid_pixel_mask,
 )
+
+
+def test_cartesian_bin_average_uses_source_quadrature_weights():
+    result = cartesian_bin_average(
+        q_z=[-0.75, -0.25, 0.25, 0.75],
+        q_y=[-0.5, -0.5, 0.5, 0.5],
+        intensity=[1.0, 3.0, 4.0, 8.0],
+        source_weight=[1.0, 3.0, 1.0, 1.0],
+        q_extent=0.5,
+        grid_size=2,
+    )
+
+    np.testing.assert_allclose(result.intensity[0, 0], 2.5)
+    np.testing.assert_allclose(result.intensity[1, 1], 6.0)
+    assert result.source_count[0, 0] == 2
+    assert result.source_count[1, 1] == 2
+    np.testing.assert_allclose(result.source_weight[0, 0], 4.0)
+    np.testing.assert_allclose(result.source_weight[1, 1], 2.0)
 
 
 def detector_grid(size=41, limit=1.0):

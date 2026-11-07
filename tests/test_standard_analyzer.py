@@ -38,10 +38,17 @@ def test_standard_analyzer_fits_and_writes_summary(tmp_path):
     assert result.fit_image.shape == intensity.shape
     assert result.powers.orders.tolist() == [0, 1, 2]
     assert result.powers.cosine_uncertainty is not None
+    assert result.spectra.q.shape == (300,)
+    assert result.spectra.cosine.shape == (3, 300)
+    assert result.spectra.cosine_uncertainty is not None
     assert result.block_tests.cosine_statistic.shape == (3,)
     assert result.parity_mismatch.mean_square >= 0.0
     assert set(result.selected_indices_by_threshold) == {0.95, 0.98, 0.99}
     assert all(result.selected_indices_by_threshold.values())
+    assert result.reconstruction_threshold == 0.95
+    assert result.reconstruction_indices == result.selected_indices_by_threshold[0.95]
+    assert result.reconstruction_image.shape == intensity.shape
+    assert result.reconstruction_spectra.q.shape == (300,)
     np.testing.assert_allclose(
         result.parity_fractions.even + result.parity_fractions.odd,
         1.0,
@@ -78,6 +85,34 @@ def test_standard_analyzer_accepts_flat_detector_point_list(tmp_path):
     assert output.exists()
     assert result.fit.mse < 1.0e-24
     assert result.fit_image.shape == intensity.shape
+
+
+def test_standard_analyzer_accepts_custom_reconstruction_threshold(tmp_path):
+    axis = np.linspace(-1.0, 1.0, 25)
+    q_z, q_y = np.meshgrid(axis, axis)
+    q = np.hypot(q_z, q_y)
+    theta = np.arctan2(q_y, q_z)
+    inside = (q >= 0.2) & (q <= 0.8)
+    intensity = np.full(q.shape, np.nan)
+    intensity[inside] = evaluate_expansion(
+        q[inside],
+        theta[inside],
+        coefficients=[3.0, 1.0],
+        indices=[(0, 0), (2, 0)],
+        q_min=0.2,
+        q_max=0.8,
+    )
+    result = standard_analyzer(
+        q_z,
+        q_y,
+        intensity,
+        q_range=(0.2, 0.8),
+        mode_limits=(2, 0),
+        reconstruction_threshold=0.80,
+        output_path=tmp_path / "custom-reconstruction.png",
+    )
+    assert result.reconstruction_threshold == 0.80
+    assert result.reconstruction_indices == ((0, 0),)
 
 
 def test_standard_analyzer_accepts_uncertainty_and_pixel_integration(tmp_path):
