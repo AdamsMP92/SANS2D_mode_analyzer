@@ -28,6 +28,12 @@ chosen annulus. By default the fitted coefficients minimize
 columns. Experimental uncertainties and fractional detector-pixel weights can
 instead activate weighted least squares as described below.
 
+The standalone [supplementary methods](documentation/supplementary_methods.tex)
+document describes the implemented expansion, fitting and covariance,
+Parseval powers, angular block statistics, radial spectra, and detector
+preprocessing in REVTeX 4.2 format. A compiled
+[PDF](documentation/supplementary_methods.pdf) is included for reading.
+
 ## Mode-index convention
 
 Every mode is selected by a two-dimensional index `(n, m)`:
@@ -219,8 +225,12 @@ fraction and remains conditional on the selected basis truncation.
 `angular_block_tests(...)` jointly tests all radial coefficients belonging to
 one angular order and one trigonometric branch.  For a coefficient block
 `c_n` with covariance `C_n`, it evaluates
-`T_n = c_n.T @ inverse(C_n) @ c_n`. When absolute experimental uncertainties
-are supplied, the statistic is compared with its chi-squared threshold. When
+`T_n = c_n.T @ pseudoinverse(C_n) @ c_n`. One SVD determines both the
+pseudoinverse and numerical rank `r`, retaining singular values strictly
+above `k * eps * s_max`, where `k` is the block size. The same retained
+directions determine the statistic and its reference degrees of freedom.
+When absolute experimental uncertainties are supplied, the statistic is
+compared with its chi-squared threshold with `r` degrees of freedom. When
 the covariance scale is estimated from the residuals, the corresponding
 finite-residual-degree-of-freedom F threshold is used. A point above its
 threshold rejects the joint null hypothesis that all radial coefficients of

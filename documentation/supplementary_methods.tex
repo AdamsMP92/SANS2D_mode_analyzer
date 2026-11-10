@@ -1,0 +1,715 @@
+% Standalone supplementary-methods document for sans2d-mode-analyzer.
+% Layout reference: ../../Michels_et_al_2026_vortexNPs_SM.tex.
+% Compile twice with pdflatex; no external figures or bibliography are required.
+\documentclass[aps,prb,preprint,onecolumn,notitlepage,amsmath,amssymb,
+  superscriptaddress,floatfix]{revtex4-2}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{etoolbox}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,
+  pdftitle={Supplemental Material: Orthogonal mode analysis of two-dimensional small-angle neutron scattering},
+  pdfauthor={SANS2D mode analyzer contributors}}
+
+% Retain the preprint typography without its forced break before the abstract.
+\makeatletter
+\patchcmd{\frontmatter@abstract@produce}{\preprintsty@sw}{\@secondoftwo}
+  {}{\ClassError{revtex4-2}{Cannot adjust abstract spacing}{}}
+\makeatother
+
+\newcommand{\dd}{\,\mathrm{d}}
+\newcommand{\Ann}{\mathcal{A}}
+\newcommand{\Modes}{\mathcal{K}}
+\newcommand{\trans}{\mathsf{T}}
+\newcommand{\tr}{\operatorname{tr}}
+\renewcommand{\theequation}{S\arabic{equation}}
+\renewcommand{\thesection}{S\arabic{section}}
+
+\begin{document}
+\raggedbottom
+
+\title{Supplemental Material:
+Orthogonal mode analysis of two-dimensional small-angle neutron scattering}
+\author{SANS2D mode analyzer contributors}
+\noaffiliation
+\date{10 November 2026}
+
+\begin{abstract}
+This document describes the analysis implemented in
+\texttt{sans2d-mode-analyzer} (version 0.1.0). A real-valued detector pattern
+on a circular annulus is represented by orthonormal radial Legendre modes
+and real angular Fourier modes. We specify the linear fit, its covariance,
+the associated Parseval powers and angular block statistics, and the radial
+coefficient spectra. We also describe detector selection, optional pixel
+integration and parity-based centering, symmetry diagnostics, reduced
+reconstructions, truncation checks, and angular-template projections.
+All quantities refer to the chosen annulus and finite fitted expansion.
+\end{abstract}
+
+\maketitle
+
+\section{Methodology of the two-dimensional SANS mode analysis}
+\label{sec:methodology}
+
+\subsection{Scope, detector coordinates, and integration measure}
+
+The input is a reduced, real-valued scattering intensity or differential
+cross section, denoted by $I(q,\theta)$. The analysis describes its radial
+and angular dependence without prescribing a particle form factor or a
+magnetization model. In particular, the modal fit does not estimate vortex
+amplitudes, particle radii, or structure-factor parameters. Such physical
+interpretations require a separate model comparison.
+
+The detector coordinates are $q_z$ along the chosen reference axis and
+$q_y$ transverse to it. For the magnetic-SANS geometry of the accompanying
+nanoflower manuscript, the reference axis is the applied-field direction.
+The code uses
+\begin{equation}
+ q=\sqrt{q_z^2+q_y^2},\qquad
+ \theta=\operatorname{atan2}(q_y,q_z),\qquad
+ (q_z,q_y)=q(\cos\theta,\sin\theta).
+ \label{eq:coordinates}
+\end{equation}
+Angles are understood modulo $2\pi$. The analysis domain and its area are
+\begin{equation}
+ \Ann=\{(q,\theta):q_{\min}\leq q\leq q_{\max},\ 0\leq\theta<2\pi\},
+ \qquad A=\pi\Delta,\qquad
+ \Delta=q_{\max}^2-q_{\min}^2>0.
+ \label{eq:annulus}
+\end{equation}
+Here $q_{\min}\geq0$; when the origin is included, its angular coordinate
+has no effect on continuous integrals because it has zero area.
+
+\begin{samepage}
+The inner product is defined with the detector-plane area measure,
+\begin{equation}
+ \langle f,g\rangle_{\Ann}
+ =\int_{q_{\min}}^{q_{\max}}\int_0^{2\pi}
+ f(q,\theta)g(q,\theta)\dd\theta\,q\dd q.
+ \label{eq:inner-product}
+\end{equation}
+\end{samepage}
+This is a two-dimensional reciprocal-space measure. It differs from both
+an unweighted radial integral $\int I\dd q$ and a three-dimensional
+scattering invariant involving $q^2\dd q$.
+
+\subsection{Orthonormal expansion and mode indices}
+
+The radial coordinate and radial modes are
+\begin{align}
+ x(q)&=\frac{2q^2-q_{\max}^2-q_{\min}^2}{\Delta},
+ \qquad q\dd q=\frac{\Delta}{4}\dd x,
+ \label{eq:radial-coordinate}\\
+ R_m(q)&=\sqrt{\frac{2(2m+1)}{\Delta}}\,P_m[x(q)],
+ \qquad m=0,1,\ldots,
+ \label{eq:radial-modes}
+\end{align}
+where $P_m$ is the Legendre polynomial of degree $m$. Since
+$\int_{-1}^{1}P_m(x)P_l(x)\dd x=2\delta_{ml}/(2m+1)$,
+\begin{equation}
+ \int_{q_{\min}}^{q_{\max}}R_m(q)R_l(q)\,q\dd q=\delta_{ml}.
+ \label{eq:radial-orthogonality}
+\end{equation}
+The coordinate affine in $q^2$ is essential for this normalization.
+
+To distinguish the angular basis from the block statistic $T_n$ below,
+we write the angular functions as $\mathcal{T}_n$:
+\begin{equation}
+ \mathcal{T}_n(\theta)=
+ \begin{cases}
+ (2\pi)^{-1/2},&n=0,\\
+ \pi^{-1/2}\cos(n\theta),&n>0,\\
+ \pi^{-1/2}\sin(|n|\theta),&n<0.
+ \end{cases}
+ \qquad
+ \int_0^{2\pi}\mathcal{T}_n\mathcal{T}_{n'}\dd\theta=\delta_{nn'}.
+ \label{eq:angular-modes}
+\end{equation}
+Thus the signed index $n$ encodes the trigonometric branch; it is not a
+negative angular frequency of a complex Fourier expansion. The product modes
+and fitted intensity are
+\begin{equation}
+ \Phi_{nm}(q,\theta)=R_m(q)\mathcal{T}_n(\theta),\qquad
+ \widehat I(q,\theta)=\sum_{(n,m)\in\Modes}
+ \widehat c_{nm}\Phi_{nm}(q,\theta),
+ \label{eq:expansion}
+\end{equation}
+with $\langle\Phi_{nm},\Phi_{n'm'}\rangle_{\Ann}
+=\delta_{nn'}\delta_{mm'}$. The standard analyzer uses the full rectangle
+$|n|\leq n_{\max}$ and $0\leq m\leq m_{\max}$, containing
+$K=(2n_{\max}+1)(m_{\max}+1)$ product modes. The lower-level fitting
+functions accept any explicitly selected set $\Modes$, including a set
+restricted to even angular orders. Omitted coefficients are understood as
+zero in subsequent sums.
+
+For a continuous, unweighted orthogonal projection of a square-integrable
+function, the coefficients would be
+\begin{equation}
+ c_{nm}^{\mathrm{proj}}=\langle I,\Phi_{nm}\rangle_{\Ann}.
+ \label{eq:projection}
+\end{equation}
+The implemented fit instead estimates them jointly from the available
+detector samples. Masks, nonuniform sampling, experimental uncertainties,
+and finite pixels generally destroy orthogonality of the sampled columns.
+Consequently, Eq.~\eqref{eq:projection} is not used as a shortcut for fitting
+masked or uncertainty-weighted detector data.
+
+\subsection{Sample selection, linear fitting, and covariance}
+
+Let $p=1,\ldots,N$ enumerate the admitted detector samples and $j$ enumerate
+the selected pairs $(n,m)$. In the default point-evaluation approximation,
+$X_{pj}=\Phi_j(q_p,\theta_p)$ and $y_p=I_p$. Selection requires finite
+coordinates and intensity, and a sample center in the chosen annulus.
+If uncertainties $\sigma_p$ or sample weights $w_p$ are supplied, their
+selected values must additionally be finite and strictly positive.
+Finite zero and negative background-corrected intensities remain in the
+fit. Logarithmic color scales affect display only.
+
+The objective is
+\begin{equation}
+ Q(\bm c)=(\bm y-X\bm c)^{\trans}W(\bm y-X\bm c),\qquad
+ W_{pp}=\frac{w_p}{\sigma_p^2}.
+ \label{eq:wls}
+\end{equation}
+Absent sample weights are set to unity. If uncertainties are absent,
+$\sigma_p=1$ defines the numerical metric and the residuals estimate its
+scale. With neither input, minimizing $Q$ is equivalent to minimizing the
+ordinary sample mean squared error. The solver applies linear least squares
+to $W^{1/2}X$ and $W^{1/2}\bm y$ using \texttt{numpy.linalg.lstsq}; it
+does not solve a nonlinear optimization problem. A rank-deficient selected
+design matrix is rejected. For full column rank, the formal solution is
+\begin{equation}
+ \widehat{\bm c}=(X^{\trans}WX)^{-1}X^{\trans}W\bm y,
+ \qquad \nu=N-K.
+ \label{eq:solution}
+\end{equation}
+The reported \texttt{mse} always equals
+$N^{-1}\sum_p(y_p-\widehat y_p)^2$, regardless of the fitting metric.
+The weighted sum of squares is $Q(\widehat{\bm c})$; the field
+\texttt{reduced\_chi\_square} equals $Q/\nu$. The latter has a conventional
+reduced-$\chi^2$ interpretation only under the corresponding noise model.
+
+For $\nu>0$, the implemented coefficient covariance is
+\begin{equation}
+ C=\gamma(X^{\trans}WX)^{-1},\qquad
+ \gamma=\begin{cases}
+ 1,&\text{supplied absolute uncertainties},\\
+ Q(\widehat{\bm c})/\nu,&\text{residual-estimated common variance scale}.
+ \end{cases}
+ \label{eq:covariance}
+\end{equation}
+The first case is the default when experimental uncertainties are supplied;
+relative uncertainties can explicitly request residual scaling. Fits
+without supplied uncertainties use the second case. The implementation
+returns an undefined covariance when $\nu\leq0$.
+
+Equation~\eqref{eq:covariance} is the working covariance used throughout
+the package. Its statistical interpretation assumes the selected linear
+model and a noise covariance proportional to $W^{-1}$. In particular,
+fractional area weights are geometric weights and need not represent
+additional statistical precision. If the actual sample covariance is
+$\Sigma$, the sampling covariance for a fixed design would instead be
+\begin{equation}
+ C_{\mathrm{sampling}}=(X^{\trans}WX)^{-1}
+ X^{\trans}W\Sigma WX(X^{\trans}WX)^{-1}.
+ \label{eq:sandwich}
+\end{equation}
+This general covariance is not evaluated by the current implementation.
+The returned errors and significance thresholds are therefore conditional
+on the working model; they do not include uncertainty in the fitted center,
+mode selection, or reduction-induced correlations. For deterministic
+simulation data, residual-scaled errors describe finite-expansion
+discrepancies under that model, rather than experimental counting noise.
+
+\subsection{Parseval identities and angular powers}
+
+For any coefficient vector in the selected orthonormal basis, including a
+detector-fitted vector, continuous orthonormality gives the exact identity
+\begin{equation}
+ \mathcal{P}=\|\widehat I\|_{\Ann}^2
+ =\int_{\Ann}\widehat I^2\dd^2q
+ =\sum_{(n,m)\in\Modes}\widehat c_{nm}^{\,2}.
+ \label{eq:parseval}
+\end{equation}
+For the infinite complete expansion this is Parseval's identity for $I$;
+for a finite continuous projection the omitted-mode norm is the sum of the
+omitted squared projection coefficients. Equation~\eqref{eq:parseval}
+is exact for the finite reconstructed function even when its coefficients
+were estimated from irregular or masked data. It does not equate its
+continuous norm to the measured weighted residual statistic or to the
+norm of an unknown signal in unobserved regions.
+
+The separate angular powers are
+\begin{align}
+ \mathcal{P}_n^c&=\sum_{m:(n,m)\in\Modes}\widehat c_{n,m}^{\,2},
+ &&n=0,1,\ldots,\nonumber\\
+ \mathcal{P}_n^s&=\sum_{m:(-n,m)\in\Modes}\widehat c_{-n,m}^{\,2},
+ &&n=1,2,\ldots,\qquad \mathcal{P}_0^s=0,
+ \label{eq:angular-power}\\
+ \mathcal{P}&=\sum_{n\geq0}(\mathcal{P}_n^c+\mathcal{P}_n^s).
+ \nonumber
+\end{align}
+These powers quantify squared-intensity content on the annulus. They are
+neither integrated scattering cross sections nor magnetic energies, and
+they discard coefficient signs. For example, since $\Phi_{00}=1/\sqrt A$,
+the linear area integral is $\int_{\Ann}\widehat I\dd^2q
+=\sqrt A\,\widehat c_{00}$ when the constant mode is present.
+If $q$ has units $Q$ and intensity has units $U$, then $R_m$ has units
+$Q^{-1}$, $c_{nm}$ has units $UQ$, and $\mathcal{P}$ has units $U^2Q^2$.
+Comparisons of absolute modal powers therefore require consistent
+coordinate units, intensity normalization, and annulus limits.
+
+For a branch block $\widehat{\bm c}_n^b$ and its marginal covariance block
+$C_n^b$, with $b\in\{c,s\}$, the plotted power uncertainty is computed as
+\begin{equation}
+ \delta\mathcal{P}_n^b=
+ \left[2\tr\!\left((C_n^b)^2\right)
+ +4(\widehat{\bm c}_n^b)^{\trans}C_n^b\widehat{\bm c}_n^b\right]^{1/2}.
+ \label{eq:power-error}
+\end{equation}
+This is the square root of the Gaussian quadratic-form variance evaluated
+with the fitted coefficient vector, including the term quadratic in
+covariance. This substitution gives a plug-in uncertainty estimate rather
+than an exact sampling standard deviation with a known true coefficient
+vector. Powers are
+not noise-bias corrected; squaring noisy coefficients produces positive
+power even for a zero true block. In the standard overview both angular
+power panels use
+\begin{equation*}
+ M=\max_{n,b}\mathcal{P}_n^b,\qquad
+ p_n^b=\frac{\mathcal{P}_n^b}{M},\qquad
+ \delta p_n^b=\frac{\delta\mathcal{P}_n^b}{M}.
+\end{equation*}
+The same $M$ is used for both branches and is held fixed in error
+propagation. The displayed values are not fractions of $\mathcal{P}$.
+The power-axis label $P_n^2/P_{\max}^2$ in the current implementation
+denotes $\mathcal{P}_n^b/M$; it does not square that power ratio again.
+On the logarithmic axes, lower error bars are shortened where necessary
+to remain above the positive plotting floor; the returned uncertainties
+retain Eq.~\eqref{eq:power-error}. The separate $(n,m)$ power maps instead
+display $\widehat c_{nm}^{\,2}/\max_j\widehat c_j^{\,2}$, using the largest
+individual product-mode power as their common scale.
+
+\subsection{Radial coefficient spectra associated with angular modes}
+
+Keeping each angular order separate while summing its radial modes gives
+the spectra returned by \texttt{angular\_radial\_spectra}:
+\begin{equation}
+ I_n^c(q)=\sum_m\widehat c_{n,m}R_m(q),\quad n\geq0,
+ \qquad
+ I_n^s(q)=\sum_m\widehat c_{-n,m}R_m(q),\quad n\geq1.
+ \label{eq:radial-spectra}
+\end{equation}
+The stored sine spectrum at order zero is identically zero. These are
+signed coefficient functions with intensity units, and the reconstruction is
+\begin{equation}
+ \widehat I(q,\theta)=\frac{I_0^c(q)}{\sqrt{2\pi}}
+ +\frac{1}{\sqrt\pi}\sum_{n\geq1}
+ \left[I_n^c(q)\cos(n\theta)+I_n^s(q)\sin(n\theta)\right].
+ \label{eq:spectral-reconstruction}
+\end{equation}
+Writing the unnormalized real Fourier series as
+$\widehat I=a_0+\sum_{n\geq1}[a_n\cos(n\theta)+b_n\sin(n\theta)]$,
+the Fourier amplitudes and azimuthal average are
+\begin{equation}
+ a_0(q)=\langle\widehat I(q,\theta)\rangle_\theta
+ =\frac{I_0^c(q)}{\sqrt{2\pi}},\qquad
+ a_n(q)=\frac{I_n^c(q)}{\sqrt\pi},\qquad
+ b_n(q)=\frac{I_n^s(q)}{\sqrt\pi}\quad(n\geq1).
+ \label{eq:fourier-amplitudes}
+\end{equation}
+Thus $I_0^c$ itself is not the azimuthally averaged intensity. The spectra
+retain radial sign changes and relative harmonic amplitudes that cannot be
+recovered from angular powers alone. Radial orthonormality connects the
+two descriptions exactly:
+\begin{equation}
+ \int_{q_{\min}}^{q_{\max}}[I_n^b(q)]^2q\dd q=\mathcal{P}_n^b.
+ \label{eq:spectrum-power}
+\end{equation}
+In the unnormalized Fourier convention just specified, the same identities
+read
+\begin{align*}
+ \mathcal{P}_0^c&=2\pi\int_{q_{\min}}^{q_{\max}}a_0(q)^2q\dd q,\\
+ \mathcal{P}_n^c&=\pi\int_{q_{\min}}^{q_{\max}}a_n(q)^2q\dd q,\qquad
+ \mathcal{P}_n^s=\pi\int_{q_{\min}}^{q_{\max}}b_n(q)^2q\dd q
+ \quad(n\geq1).
+\end{align*}
+These factors are already included in the orthonormal coefficient
+convention of Eq.~\eqref{eq:angular-power}.
+
+Let $\bm R_n^b(q)$ contain the radial modes present in the selected branch
+block. Covariance propagation gives
+\begin{equation}
+ \operatorname{Var}[I_n^b(q)]
+ =[\bm R_n^b(q)]^{\trans}C_n^b\bm R_n^b(q),
+ \qquad
+ \operatorname{Cov}[I_n^b(q),I_n^b(q')]
+ =[\bm R_n^b(q)]^{\trans}C_n^b\bm R_n^b(q').
+ \label{eq:spectrum-error}
+\end{equation}
+The standard analyzer evaluates the spectra at 300 equally spaced $q$
+values and displays pointwise one-standard-deviation bands from the first
+expression. This grid samples the fitted function; it introduces no new
+independent observations. Simultaneous confidence bands are not calculated.
+
+\subsection{Angular block statistics \texorpdfstring{$T_n$}{Tn}}
+
+Angular powers measure amplitude, whereas \texttt{angular\_block\_tests}
+tests whether an entire angular contribution is distinguishable from zero
+under the fit covariance model. For each branch and order the null is
+$H_{0,n}^b:\bm c_n^b=\bm0$, with every other fitted coefficient left free.
+The statistic and block rank are
+\begin{equation}
+ T_n^b=(\widehat{\bm c}_n^b)^{\trans}(C_n^b)^+_{\tau}
+             \widehat{\bm c}_n^b,\qquad
+ r_n^b=\#\{j:s_j>\tau_n^b\},
+ \label{eq:block-statistic}
+\end{equation}
+where $r_n^b$ is the numerical rank. For a covariance block of dimension
+$k_n^b$, a single singular-value decomposition determines both this rank
+and the numerical pseudoinverse:
+\begin{align*}
+ C_n^b&=U\operatorname{diag}(s_j)V^{\trans},\qquad
+ \tau_n^b=k_n^b\epsilon_{\mathrm{mach}}s_{\max},\\
+ (C_n^b)^+_{\tau}&=V\operatorname{diag}(d_j)U^{\trans},\qquad
+ d_j=\begin{cases}
+ s_j^{-1},&s_j>\tau_n^b,\\
+ 0,&s_j\leq\tau_n^b.
+ \end{cases}
+\end{align*}
+Here $\epsilon_{\mathrm{mach}}$ is the machine precision of the
+double-precision covariance array. The same retained-singular-value mask
+is used for the rank and pseudoinverse; values exactly at the cutoff are
+discarded. The latter is the Moore--Penrose pseudoinverse of the truncated
+covariance block and reduces to the ordinary inverse when all directions
+are retained. All correlations between the fitted radial coefficients
+enter the covariance block; individual squared coefficient-to-error
+ratios cannot in general replace Eq.~\eqref{eq:block-statistic}. The
+quantities $T_n^b$ are dimensionless test statistics, not expansion
+coefficients or Parseval powers.
+
+With independent Gaussian errors of known absolute scale and the correct
+precision matrix, the null reference distribution is $\chi^2_{r_n^b}$.
+When the common variance scale is estimated from the same fit residuals,
+the reference is $T_n^b/r_n^b\sim F_{r_n^b,\nu}$ under the corresponding
+Gaussian model. Thus the plotted critical value at confidence $\beta$ is
+\begin{equation}
+ T_{n,\mathrm{crit}}^b=
+ \begin{cases}
+ \chi^2_{r_n^b;\,\beta},&\text{absolute covariance scale},\\
+ r_n^b F_{r_n^b,\nu;\,\beta},&\text{residual-estimated covariance scale}.
+ \end{cases}
+ \label{eq:block-threshold}
+\end{equation}
+The default is $\beta=0.95$; upper-tail probabilities are also returned.
+The code plots $T_n^b$ itself against Eq.~\eqref{eq:block-threshold}.
+In the residual-scaled case it evaluates the upper tail of the
+$F_{r_n^b,\nu}$ distribution at $T_n^b/r_n^b$; the plotted statistic is
+not divided by $r_n^b$. The standard analyzer selects this case when
+\texttt{covariance\_scaled\_by\_residual} is true and passes the fit's
+residual degrees of freedom to the block-test function.
+Missing blocks have rank zero and undefined statistics, including the
+nonexistent zero-order sine block. A rejection concerns the specified
+block conditional on the other included modes. The implementation applies
+no correction for testing several blocks, and a small amplitude can have
+a large $T_n^b$ if it is precisely determined. The working-model
+qualification following Eq.~\eqref{eq:covariance} applies to these tests.
+
+For nearly singular blocks the statistic tests only the covariance
+directions retained by the common cutoff. The same numerical rank
+determines the reference distributions and thresholds above. An existing
+block with zero numerical rank has a zero stored statistic and undefined
+upper-tail probability and critical value; it provides no calibrated test.
+
+\subsection{Parity, mirror symmetry, and signal centering}
+
+Point reflection in the detector plane is $\theta\mapsto\theta+\pi$.
+Both trigonometric branches obey
+$\mathcal{T}_n(\theta+\pi)=(-1)^{|n|}\mathcal{T}_n(\theta)$.
+An exactly parity-even pattern therefore has only even angular orders.
+The package reports
+\begin{equation}
+ f_{\mathrm{odd}}=
+ \frac{\sum_{|n|\,\mathrm{odd},m}\widehat c_{nm}^{\,2}}{\mathcal{P}},
+ \qquad f_{\mathrm{even}}=1-f_{\mathrm{odd}},
+ \label{eq:parity-fractions}
+\end{equation}
+provided $\mathcal{P}>0$. For the fitted expansion, Parseval gives
+\begin{align}
+ D_{\mathrm{par}}^2
+ &=\frac{1}{A}\int_{\Ann}
+ [\widehat I(q,\theta)-\widehat I(q,\theta+\pi)]^2\dd^2q
+ =\frac{4\mathcal{P}f_{\mathrm{odd}}}{A},
+ \label{eq:parity-mismatch}\\
+ d_{\mathrm{par}}
+ &=\frac{\|\widehat I(q,\theta)-\widehat I(q,\theta+\pi)\|_{\Ann}}
+          {\|\widehat I\|_{\Ann}}
+ =2\sqrt{f_{\mathrm{odd}}}.
+ \label{eq:relative-parity}
+\end{align}
+The first measure has intensity-squared units; the second is a scale-free
+relative RMS mismatch and contains the same information as $f_{\mathrm{odd}}$.
+These are diagnostics of the fitted function. Mirror symmetry about the
+$q_z$ axis is $\theta\mapsto-\theta$ and forbids all sine coefficients;
+it is an additional assumption independent of parity.
+
+For a cross section known to be parity even, an incorrect origin can create
+odd harmonics. The optional centering step estimates a common displacement
+of the reciprocal-space origin from antipodal intensity differences.
+For a two-dimensional affine detector grid, the fitted coordinate map is
+\begin{equation}
+ \begin{pmatrix}q_z\\q_y\end{pmatrix}
+ =B\begin{pmatrix}r\\s\end{pmatrix}+\bm b,\qquad
+ \bm\delta=B\begin{pmatrix}\delta_r\\\delta_s\end{pmatrix},\qquad
+ \bm q'_p=\bm q_p-\bm\delta,
+ \label{eq:center-map}
+\end{equation}
+where $r,s$ are row and column indices. The antipodal partner in the
+original coordinates is $2\bm\delta-\bm q_p$. Bilinear interpolation gives
+$\widetilde I(2\bm\delta-\bm q_p)=\sum_j a_j I_j$ and conditional variance
+$\widetilde\sigma_p^2=\sum_j a_j^2\sigma_j^2$. All neighbors with nonzero
+interpolation weight must be valid. The minimized objective is
+\begin{equation}
+ Q_{\mathrm{cen}}(\bm\delta)=
+ \sum_{p\in\mathcal{H}(\bm\delta)}
+ \frac{[I_p-\widetilde I(2\bm\delta-\bm q_p)]^2}
+      {\sigma_p^2+\widetilde\sigma_p^2}.
+ \label{eq:centering-objective}
+\end{equation}
+Here $\mathcal{H}(\bm\delta)$ selects valid partners within the corrected
+annulus and one representative half-plane, avoiding explicit antipodal
+double counting. The admissible set can change with the trial shift. The
+implementation minimizes the unnormalized sum, records the before/after
+objectives and pair counts, and uses a bounded Powell search. The standard
+analyzer bounds each detector-index displacement by two pixels by default;
+the standalone grid refiner defaults to one pixel. Multiple images can be
+passed to the standalone refiner to minimize the sum of their objectives
+for one common shift.
+
+For a one-dimensional point list, the center is estimated on a regular
+$129\times129$ auxiliary grid spanning $[-q_{\max},q_{\max}]^2$ by default.
+Valid source points within $1.05q_{\max}$ are used for linear intensity
+interpolation; centering uncertainties are assigned from the nearest
+measured point. After refining this grid, the displacement is applied to
+the original point coordinates. The final modal fit retains the original
+intensities, uncertainties, and point sampling. In either centering path,
+the selected annulus is reevaluated after the shift. Centering requires
+supplied uncertainties and is disabled by default in the standard analyzer.
+Geometry-dependent externally supplied weights must be recomputed for the
+shifted origin; internal pixel integration computes coverage after centering.
+
+Interpolation correlations and center-estimation uncertainty are not
+propagated. Accordingly, $Q_{\mathrm{cen}}$ is a centering diagnostic rather
+than a calibrated goodness-of-fit statistic for the original data. A
+physical odd contribution must not be absorbed into a parity-based center.
+In particular, the polarization-averaged spin-flip cross section and an
+individual spin-flip channel need not have the same parity because an
+individual channel can contain a chiral contribution. An odd-power fraction
+alone therefore does not identify a reduction or centering error.
+
+\subsection{Finite pixels, rebinning, and explicit preprocessing}
+
+For an affine detector grid, optional subpixel quadrature estimates the
+annular coverage of a pixel $P_p$ and the admitted-area average of each mode:
+\begin{equation}
+ f_p=\frac{|P_p\cap\Ann|}{|P_p|}
+ \simeq\frac{N_{p,\mathrm{in}}}{s_{\mathrm{sub}}^2},\qquad
+ \overline X_{pj}\simeq
+ \frac{1}{N_{p,\mathrm{in}}}
+ \sum_{\ell\in P_p\cap\Ann}\Phi_j(q_\ell,\theta_\ell).
+ \label{eq:pixel-integration}
+\end{equation}
+Subpixel nodes lie at the centers of a regular
+$s_{\mathrm{sub}}\times s_{\mathrm{sub}}$ subdivision. The affine map
+accounts for pixel shape and orientation. There are two distinct uses:
+\texttt{fractional\_annulus\_weights} supplies $f_p$ as a fit weight, while
+\texttt{pixel\_integrated\_annulus\_design} also replaces the design row by
+$\overline X_{pj}$. The latter admits any pixel with $f_p>0$ and multiplies
+an existing sample weight by $f_p$. The default standard analyzer instead
+uses center-point selection and evaluation; supplying only external
+fractional weights retains that center-point annulus selection. One must
+therefore enable internal pixel integration to include pixels whose centers
+lie outside the annulus but whose areas overlap it. Supplying the same
+coverage externally as well would apply it twice.
+
+Pixel averaging refers to the portion inside the analysis annulus; the
+observed pixel intensity itself is not subdivided. This is an approximation
+for boundary pixels that represent full-pixel averages. Pixel integration
+also does not model wavelength spread or instrumental $q$ resolution.
+For a point list without supplied pixel geometry, these helpers reduce to
+binary annulus selection and point evaluation. The integrated design is
+assembled in chunks to bound temporary storage.
+
+The optional \texttt{cartesian\_bin\_average} routine converts point
+samples into equal-area Cartesian cells by
+\begin{equation}
+ I_P=\frac{\sum_{\ell\in P}v_\ell I_\ell}
+            {\sum_{\ell\in P}v_\ell}.
+ \label{eq:rebinning}
+\end{equation}
+For a source grid uniform in $(q,\theta)$, $v_\ell=q_\ell$ supplies the
+Jacobian of $q\dd q\dd\theta$; general nonuniform grids require their
+actual quadrature weights. A duplicated angular endpoint at $2\pi$ should
+be removed before averaging, as in the documented NuMagSANS data
+preparation. Empty cells remain undefined. The routine returns occupancies
+and source-weight sums, but does not propagate measurement uncertainties.
+Equal-area Cartesian samples require no additional factor of $q$ in the
+subsequent area-based fit.
+
+Further preprocessing functions are explicit optional operations.
+\texttt{symmetry\_diagnostic} compares original pixels to bilinearly
+interpolated parity or mirror partners using residuals standardized by
+$\sqrt{\sigma_p^2+\widetilde\sigma_p^2}$. Its summed statistic uses one
+representative half-plane and is conditional on interpolation assumptions.
+\texttt{symmetry\_fold} averages a complete symmetry orbit $\mathcal{O}_p$
+by inverse variance,
+\begin{equation}
+ I_p^{\mathrm{fold}}=
+ \frac{\sum_{j\in\mathcal{O}_p}I_j/\sigma_j^2}
+      {\sum_{j\in\mathcal{O}_p}1/\sigma_j^2},\qquad
+ (\sigma_p^{\mathrm{fold}})^2=
+ \left(\sum_{j\in\mathcal{O}_p}1/\sigma_j^2\right)^{-1}.
+ \label{eq:folding}
+\end{equation}
+Incomplete orbits are marked invalid. Parity folding imposes even orders;
+adding mirror folding also imposes the absence of sine contributions.
+The returned per-pixel errors omit correlations from interpolation and
+shared orbit members. Folding is intended for visualization and sensitivity
+checks; symmetry-constrained fits to the original samples avoid creating
+these duplicated observations. Folding is never automatic.
+
+\texttt{mask\_symmetry\_diagnostic} reports a weight-centroid displacement
+normalized by the largest admitted radius, point-reflection residuals of
+the mask, and the number of partially covered pixels.
+\texttt{rotate\_coordinates} changes the angular origin according to
+$\theta'=\theta-\varphi$ without changing intensities.
+\texttt{rescale\_intensity} divides intensities and uncertainties by a
+common positive number. \texttt{standardized\_residual\_outliers} flags
+$|I_p-\widehat I_p|/\sigma_p>5$ by default and does not delete samples.
+These functions do not implement experimental background, efficiency, or
+polarization-leakage corrections; those belong to the preceding reduction.
+
+\subsection{Reduced reconstructions and truncation stability}
+
+The \texttt{power\_model\_selector} ranks individual product modes by
+$\widehat c_j^2$. For a requested power fraction $0<\eta\leq1$, it retains
+the shortest descending-power list $\Modes_\eta$ satisfying
+\begin{equation}
+ \sum_{j\in\Modes_\eta}\widehat c_j^2\geq\eta\mathcal{P},\qquad
+ \|\widehat I-\widehat I_\eta\|_{\Ann}^2
+ =\sum_{j\notin\Modes_\eta}\widehat c_j^2
+ \leq(1-\eta)\mathcal{P}.
+ \label{eq:power-reconstruction}
+\end{equation}
+The retained coefficients are taken from the full fit without refitting.
+This gives a norm-controlled compression of that fitted function, not an
+independent test against the measured data. The standard overview reports
+mode counts at $\eta=0.95,0.98,0.99$ and displays a reduced reconstruction
+with a configurable default $\eta=0.95$. Positive and negative signed
+indices count as distinct angular modes. The reduced spectra and their
+covariance blocks retain only the selected coefficients; their error bands
+condition on the selected subset.
+
+The optional \texttt{mode\_convergence\_standard\_analyzer} checks
+rectangular truncations against the largest tested rectangle, denoted by
+an asterisk. It constructs one maximum-order point-evaluated design matrix
+and refits every candidate subset with the same supplied weights. For a
+candidate $\Modes$, with prediction $\widehat{\bm y}_{\Modes}$ and
+coefficient vector zero-padded into the reference basis, it computes
+\begin{align}
+ e_{\mathrm{pred}}&=
+ \frac{\|\widehat{\bm y}_{\Modes}-\widehat{\bm y}_*\|_2}
+      {\|\widehat{\bm y}_*\|_2},\qquad
+ e_{\mathrm{coef}}=
+ \frac{\|\widehat{\bm c}_{\Modes}^{\mathrm{pad}}
+                -\widehat{\bm c}_*\|_2}{\|\widehat{\bm c}_*\|_2},
+ \label{eq:convergence-norms}\\
+ e_{\mathrm{MSE}}&=
+ \frac{\max(\mathrm{MSE}_{\Modes}-\mathrm{MSE}_*,0)}
+      {N^{-1}\sum_p I_p^2}.
+ \label{eq:convergence-mse}
+\end{align}
+Denominators are protected from zero numerically. All three comparisons
+use unweighted norms or unweighted MSE, even if the coefficient fits are
+weighted. A candidate is stable if all tolerances are met; their defaults
+are $0.01$, $0.05$, and $0.001$, respectively. The stable rectangle with
+the fewest product modes is selected, with ties resolved by the sum of
+orders, then angular order, then radial order. If either selected order
+equals its tested upper limit, stabilization within the tested limits is
+not declared. A finite reference comparison checks numerical stability,
+not predictive validity or freedom from overfitting. Centering and pixel
+integration are not options of the current convergence wrapper; centering
+can be applied explicitly before a sweep.
+
+\subsection{Angular-template projections}
+
+Two optional template tests examine $I(q,\theta)=A(q)\sin^2\theta$ and
+$I(q,\theta)=A(q)\sin^2\theta\cos^2\theta$, leaving $A(q)$ unrestricted
+within the fitted radial basis. Since
+\begin{equation}
+ \sin^2\theta=\tfrac12[1-\cos(2\theta)],\qquad
+ \sin^2\theta\cos^2\theta=\tfrac18[1-\cos(4\theta)],
+ \label{eq:templates}
+\end{equation}
+the target harmonic is $h=2$ or $h=4$, respectively. Both require
+$a_h(q)=-a_0(q)$ in conventional Fourier amplitudes, or, with the present
+orthonormal convention,
+\begin{equation}
+ c_{h,m}=-\frac{c_{0,m}}{\sqrt2}\quad\text{for every }m,
+ \label{eq:template-ratio}
+\end{equation}
+and zero coefficients in all other angular contributions. The code
+requires matching radial index sets in the constant and target cosine
+blocks. With $\bm v=(1,-1/\sqrt2)^{\trans}$ and
+$\bm d_m=(\widehat c_{0,m},\widehat c_{h,m})^{\trans}$, its Euclidean
+projection is
+\begin{equation}
+ \bm d_m^{\mathrm{tpl}}=
+ \frac{\bm v^{\trans}\bm d_m}{\bm v^{\trans}\bm v}\bm v.
+ \label{eq:template-projection}
+\end{equation}
+All other template coefficients are set to zero. The squared residual
+splits into the mismatch within these pairs and the power in forbidden
+angular modes. Dividing by $\mathcal{P}$ gives the returned pair-mismatch,
+forbidden-mode, and total residual fractions; the explained fraction is
+one minus the residual fraction. This is a Parseval-metric projection,
+not a covariance-weighted hypothesis test. It propagates no coefficient
+uncertainty and imposes no positivity constraint on $A(q)$.
+
+\subsection{Implementation correspondence and data conventions}
+
+The definitions above correspond to \texttt{basis.py} and \texttt{indices.py}
+(basis and selected modes), \texttt{fit.py} (linear fit and covariance),
+\texttt{power.py} (powers, parity, and power selection), \texttt{spectra.py}
+(radial spectra), and \texttt{block\_test.py} (angular block tests), all
+under \texttt{src/sans2d\_mode\_analyzer/}. Explicit detector operations
+reside in \texttt{preconditioning.py}, the truncation sweep in
+\texttt{convergence.py}, and template projections in \texttt{mode\_tests.py}.
+The \texttt{standard\_analyzer} combines sample selection, the rectangular
+fit, and its diagnostic overview; the numerical results and spectra are
+also returned directly.
+
+The ILL NeXus loader maps the stored \texttt{qx1} direction to $q_z$,
+\texttt{qy1} to $q_y$, and converts the stored inverse-angstrom coordinates
+to inverse nanometers by a default factor of ten. For the bundled
+nanoflower data, the local data documentation identifies the 10 and
+30~mT maps as $\tfrac12(I^{+-}+I^{-+})$, whereas the 100~mT and 1~T maps
+contain the $+-$ channel alone. Their common baseline analysis uses
+$0.015\leq q\leq0.100\,\mathrm{nm}^{-1}$, the supplied uncertainties,
+$n_{\max}=m_{\max}=25$, $7\times7$ subpixel coverage weights, and no
+parity centering or folding.
+The ASCII loader reads columns $(q_z,q_y,I,\sigma)$ without converting
+units; the legacy nanoporous-Fe benchmark has an unresolved coordinate-unit
+caveat in its data README. Its numerical $q$ interval must therefore not
+be assigned physical units without establishing that provenance.
+
+A reproducible analysis specifies the input channel and reduction,
+coordinate units and angular origin, annulus, retained mode set, weights
+and covariance scaling, any centering or symmetry operations, and the
+truncation and compression settings. The modal description then provides
+a common representation for measured and simulated detector patterns,
+with physical interpretation tied to the observable and assumptions used.
+
+\end{document}

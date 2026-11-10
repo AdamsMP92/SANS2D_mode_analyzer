@@ -38,11 +38,15 @@ def angular_block_tests(
 ) -> AngularBlockTests:
     r"""Test whether all radial coefficients at fixed ``n`` are zero.
 
-    The block statistic is :math:`T_n=c_n^T C_n^{-1}c_n`.  When the residual
-    variance was estimated from the same least-squares fit, ``T_n / k`` is
-    compared with an F distribution with ``(k, residual_dof)`` degrees of
+    The block statistic is :math:`T_n=c_n^T C_n^+c_n`. The pseudoinverse and
+    numerical rank ``r`` retain the same singular values strictly above
+    ``k * eps * s_max``, where ``k`` is the block size and ``eps`` is machine
+    precision. Both are computed from a single SVD of the covariance block.
+    When the residual variance was estimated from the same least-squares
+    fit, ``T_n / r`` is compared with an F distribution with
+    ``(r, residual_dof)`` degrees of
     freedom.  Without ``residual_degrees_of_freedom``, the asymptotic
-    chi-squared distribution with ``k`` degrees of freedom is used.
+    chi-squared distribution with ``r`` degrees of freedom is used.
     """
     modes = validate_indices(indices)
     values = np.asarray(coefficients, dtype=float)
@@ -90,10 +94,19 @@ def _block(coefficients, covariance, modes, angular_index):
         return _empty_block()
     selected_coefficients = coefficients[positions]
     selected_covariance = covariance[np.ix_(positions, positions)]
-    rank = int(np.linalg.matrix_rank(selected_covariance))
+    left, singular_values, right_transpose = np.linalg.svd(
+        selected_covariance, full_matrices=False
+    )
+    cutoff = len(positions) * np.finfo(selected_covariance.dtype).eps * singular_values[0]
+    # One cutoff and one SVD keep the statistic and its reference rank aligned.
+    retained = singular_values > cutoff
+    rank = int(np.count_nonzero(retained))
+    pseudoinverse = (
+        right_transpose[retained].T / singular_values[retained]
+    ) @ left[:, retained].T
     statistic = float(
         selected_coefficients
-        @ np.linalg.pinv(selected_covariance)
+        @ pseudoinverse
         @ selected_coefficients
     )
     return statistic, rank
