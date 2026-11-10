@@ -7,6 +7,8 @@ from sans2d_mode_analyzer import standard_analyzer
 from synthetic_models import powder_average_affine_noise_signal
 
 repository = Path(__file__).resolve().parents[1]
+output_directory = repository / "examples" / "output"
+output_directory.mkdir(parents=True, exist_ok=True)
 
 # Generate synthetic data.
 radius = 30.0
@@ -24,5 +26,5 @@ analysis = standard_analyzer(
     noisy_image,
     q_range=q_range,
     mode_limits=mode_limits,
-    output_path=repository / "examples/synthetic_sphere_fit.png",
+    output_path=output_directory / "synthetic_sphere_fit.png",
 )

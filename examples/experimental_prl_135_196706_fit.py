@@ -9,14 +9,16 @@ from sans2d_mode_analyzer import (
 
 
 repository = Path(__file__).resolve().parents[1]
+output_directory = repository / "examples" / "output"
+output_directory.mkdir(parents=True, exist_ok=True)
 data_file = (
     repository
-    / "experimental_data/doi_10.1103_5yc2-pv4y/igc_nanoporous_Fe_0p1T.dat"
+    / "experimental_data/doi_10.1103_5yc2-pv4y/data/igc_nanoporous_Fe_0p1T.dat"
 )
 data = load_ascii_detector_data(data_file)
 
-output1 = repository / "examples/experimental_prl_135_196706_raw_fit.png"
-output2 = repository / "examples/experimental_prl_135_196706_centered_fit.png"
+output1 = output_directory / "experimental_prl_135_196706_raw_fit.png"
+output2 = output_directory / "experimental_prl_135_196706_centered_fit.png"
 
 q_range = (0.005, 0.030)
 mode_limits = (30, 30)

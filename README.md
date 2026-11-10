@@ -59,6 +59,9 @@ pixi run analyze-arxiv-2606-18791
 pixi run analyze-prl-135-196706
 ```
 
+The scripts in `examples/` write their PNG figures to `examples/output/`.
+The output directory is created automatically and ignored by Git.
+
 The example creates a noisy synthetic detector pattern proportional to
 
 ```text
@@ -67,7 +70,7 @@ The example creates a noisy synthetic detector pattern proportional to
 
 where `F` is the normalized spherical form-factor amplitude.  It then fits a
 rectangular mode grid over `0.5 <= qR <= 5.0` and writes
-`examples/synthetic_sphere_fit.png`.  The PNG contains the input, fit, and
+`examples/output/synthetic_sphere_fit.png`.  The PNG contains the input, fit, and
 residual in its upper row and the cosine and sine angular powers in its lower
 row.  The complete beginner-oriented script is in
 [`examples/synthetic_sphere_fit.py`](examples/synthetic_sphere_fit.py).
@@ -83,7 +86,8 @@ Two retained four-column ASCII SANS benchmark maps from the earlier MATLAB
 OrthoDecomp work are stored under
 [`experimental_data/doi_10.1103_5yc2-pv4y`](experimental_data/doi_10.1103_5yc2-pv4y).
 Each data set documents its own format, provenance, caveats, analysis script,
-and generated results in its local README.
+and generated results in its local README. Input files are stored in each
+collection's `data/` subdirectory.
 The compact `examples/experimental_prl_135_196706_fit.py` example applies the
 standard analyzer to `igc_nanoporous_Fe_0p1T.dat` over the legacy numerical interval
 `0.005 <= q <= 0.030`. It writes a raw fit and a second fit after a

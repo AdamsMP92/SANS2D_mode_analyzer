@@ -28,6 +28,8 @@ def load_cartesian_spin_flip(
 q_min, q_max = 0.05, 0.50
 #cartesian_grid_size = 161
 repository = Path(__file__).resolve().parents[1]
+output_directory = repository / "examples" / "output"
+output_directory.mkdir(parents=True, exist_ok=True)
 spectra_by_index = {}
 
 for index in (1, 2):
@@ -35,7 +37,7 @@ for index in (1, 2):
 
     cartesian_file = (
         repository
-        / "experimental_data/NuMagSANS_IVR40"
+        / "experimental_data/NuMagSANS_IVR40/data"
         / data_set
         / "SANS2D_cartesian.csv"
     )
@@ -53,7 +55,7 @@ for index in (1, 2):
         mode_limits=(2, 10),
         sample_weight=annulus_weight,
         log_intensity_colorbar=False,
-        output_path=repository / "examples" / f"{data_set}.png",
+        output_path=output_directory / f"{data_set}.png",
         reconstruction_threshold=0.999,
     )
 
@@ -89,7 +91,7 @@ for axis, order in zip(axes, (0, 2)):
     axis.grid(alpha=0.25)
     axis.legend()
 
-comparison_path = repository / "examples/NuMagSANS_IVR40_1_vs_2_I0_I2.png"
+comparison_path = output_directory / "NuMagSANS_IVR40_1_vs_2_I0_I2.png"
 figure.savefig(comparison_path, dpi=150)
 plt.close(figure)
 print(f"radial-spectrum comparison: {comparison_path}")

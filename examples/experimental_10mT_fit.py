@@ -11,9 +11,11 @@ from sans2d_mode_analyzer import (
 
 
 repository = Path(__file__).resolve().parents[1]
+output_directory = repository / "examples" / "output"
+output_directory.mkdir(parents=True, exist_ok=True)
 data_file = (
     repository
-    / "experimental_data/doi_10.48550_arXiv.2606.18791/10mT_S3.nxs"
+    / "experimental_data/doi_10.48550_arXiv.2606.18791/data/10mT_S3.nxs"
 )
 data = load_ill_nexus(data_file)
 q_range = (0.015, 0.10)
@@ -33,7 +35,7 @@ if convergence_analysis:
         sample_weight=annulus_weight,
         q_range=q_range,
         mode_limits=(22, 22),
-        output_path=repository / "examples/experimental_10mT_fit.png",
+        output_path=output_directory / "experimental_10mT_fit.png",
     )
 
     print(f"selected n_max = {convergence.selected_n_max}")
@@ -49,5 +51,5 @@ else:
         sample_weight=annulus_weight,
         q_range=q_range,
         mode_limits=mode_limits,
-        output_path=repository / "examples/experimental_10mT_fit.png",
+        output_path=output_directory / "experimental_10mT_fit.png",
     )

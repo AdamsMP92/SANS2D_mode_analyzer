@@ -1,9 +1,9 @@
 # 220 nm iron-oxide nanoflower data
 
-This directory contains the four supplied two-dimensional spin-flip SANS
-NeXus files for nominal fields of 10 mT, 30 mT, 100 mT, and 1 T. They are
-byte-for-byte copies of the files used in the associated local manuscript
-analysis.
+The [`data/`](data/) directory contains the four supplied two-dimensional
+spin-flip SANS NeXus files for nominal fields of 10 mT, 30 mT, 100 mT, and 1 T.
+They are byte-for-byte copies of the files used in the associated local
+manuscript analysis.
 
 The data are associated with the following preprint:
 
@@ -47,8 +47,8 @@ experiment-specific reduction.
 ## SHA-256 checksums
 
 ```text
-f79966cef3caefb7227230741574f2ecd35ba785cdcae36fcdb5f8fd1d9a9bb1  10mT_S3.nxs
-8d906725b511a719cc820483290643b7573ad30ed4649fca51e7f3313dc3b9d9  30mT_S3.nxs
-7ca33ec80248ad6316503894a762b0cd272a9b54337254397502fc0e424f8d55  100mT_S3.nxs
-fb2f183e8bf14d6618515996c68b366890f4b514498dd60ca4e0ec351b1578a8  1T_S3.nxs
+f79966cef3caefb7227230741574f2ecd35ba785cdcae36fcdb5f8fd1d9a9bb1  data/10mT_S3.nxs
+8d906725b511a719cc820483290643b7573ad30ed4649fca51e7f3313dc3b9d9  data/30mT_S3.nxs
+7ca33ec80248ad6316503894a762b0cd272a9b54337254397502fc0e424f8d55  data/100mT_S3.nxs
+fb2f183e8bf14d6618515996c68b366890f4b514498dd60ca4e0ec351b1578a8  data/1T_S3.nxs
 ```

@@ -6,8 +6,9 @@ from sans2d_mode_analyzer import load_ascii_detector_data, standard_analyzer
 
 
 dataset_directory = Path(__file__).resolve().parent
+data_directory = dataset_directory / "data"
 results_directory = dataset_directory / "analysis_results"
-data_files = sorted(dataset_directory.glob("*.dat"))
+data_files = sorted(data_directory.glob("*.dat"))
 
 for data_file in data_files:
     data = load_ascii_detector_data(data_file)

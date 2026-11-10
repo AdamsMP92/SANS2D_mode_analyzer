@@ -10,6 +10,7 @@ from sans2d_mode_analyzer import (
 
 
 dataset_directory = Path(__file__).resolve().parent
+data_directory = dataset_directory / "data"
 results_directory = dataset_directory / "analysis_results"
 
 data_files = [
@@ -20,7 +21,7 @@ data_files = [
 ]
 
 for filename in data_files:
-    data = load_ill_nexus(dataset_directory / filename)
+    data = load_ill_nexus(data_directory / filename)
 
     output = results_directory / f"{Path(filename).stem}_standard_analysis.png"
     annulus_weight = fractional_annulus_weights(

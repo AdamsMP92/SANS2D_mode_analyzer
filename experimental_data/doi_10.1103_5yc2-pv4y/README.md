@@ -1,8 +1,8 @@
 # Detector-map benchmarks associated with DOI 10.1103/5yc2-pv4y
 
-This directory contains a curated two-file subset of four-column detector maps
-copied from the earlier MATLAB `OrthoDecomp` directory. Project context
-associates the files with
+The [`data/`](data/) directory contains a curated two-file subset of four-column
+detector maps copied from the earlier MATLAB `OrthoDecomp` directory. Project
+context associates the files with
 
 > I. Titov et al., "Spin-Disorder-Induced Angular Anisotropy in Polarized
 > Magnetic Neutron Scattering," *Physical Review Letters* **135**, 196706
@@ -22,8 +22,8 @@ q_z    q_y    intensity    uncertainty
 
 | Current file | Original file | Numeric rows | Observed numerical q range |
 |---|---|---:|---:|
-| `igc_nanoporous_Fe_0p1T.dat` | `000000.dat` | 62105 | 0.003863--0.594523 |
-| `igc_nanoporous_Fe_9T_15m_5K.dat` | `9T_15m_5K.dat` | 16251 | 0.003765--0.057577 |
+| `data/igc_nanoporous_Fe_0p1T.dat` | `000000.dat` | 62105 | 0.003863--0.594523 |
+| `data/igc_nanoporous_Fe_9T_15m_5K.dat` | `9T_15m_5K.dat` | 16251 | 0.003765--0.057577 |
 
 Both files are identified with the inert-gas-condensed nanoporous-Fe sample:
 the first with the low-field measurement shown in the paper at `0.1 T`, and
@@ -99,6 +99,6 @@ compares the uncentered and parity-centered analyses of
 ## SHA-256 checksums
 
 ```text
-91b9a0ea9361fab1c4b0b82d553aa85b6a822014463e416439d148b6b5547bca  igc_nanoporous_Fe_0p1T.dat
-621af78e4cb6d84cacd41c8ae146babb42d3b081a797248258d4abd20089270a  igc_nanoporous_Fe_9T_15m_5K.dat
+91b9a0ea9361fab1c4b0b82d553aa85b6a822014463e416439d148b6b5547bca  data/igc_nanoporous_Fe_0p1T.dat
+621af78e4cb6d84cacd41c8ae146babb42d3b081a797248258d4abd20089270a  data/igc_nanoporous_Fe_9T_15m_5K.dat
 ```
