@@ -29,7 +29,7 @@ analysis = standard_analyzer(
     uncertainty=data.uncertainty,
     q_range=q_range,
     mode_limits=mode_limits,
-    log_intensity_colorbar=True,
+    log_intensity_colorbar=False,
     output_path=output1,
 )
 
@@ -42,6 +42,6 @@ centered_analysis = standard_analyzer(
     beam_centering=True,
     q_range=q_range,
     mode_limits=mode_limits,
-    log_intensity_colorbar=True,
+    log_intensity_colorbar=False,
     output_path=output2,
 )
