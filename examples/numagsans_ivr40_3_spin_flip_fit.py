@@ -14,7 +14,7 @@ from sans2d_mode_analyzer import (
 def load_cartesian_spin_flip(
     path: Path,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Load a square Cartesian NuMagSANS map written by this example."""
+    """Load one retained square Cartesian NuMagSANS map."""
     values = np.loadtxt(path, delimiter=",", skiprows=1, usecols=(0, 1, 4))
     grid_size = int(round(np.sqrt(values.shape[0])))
     shape = (grid_size, grid_size)
@@ -26,7 +26,6 @@ def load_cartesian_spin_flip(
 
 
 q_min, q_max = 0.05, 0.50
-#cartesian_grid_size = 161
 repository = Path(__file__).resolve().parents[1]
 output_directory = repository / "examples" / "output"
 output_directory.mkdir(parents=True, exist_ok=True)

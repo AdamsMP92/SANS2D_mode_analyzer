@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from .block_test import AngularBlockTests, angular_block_tests
-from .fit import MSEFitResult, fit_design_matrix, fit_mse, fit_wls
+from .fit import LinearFitResult, fit_design_matrix, fit_mse, fit_wls
 from .indices import even_angular_indices, rectangular_indices
 from .io import DetectorData
 from .power import (
@@ -35,7 +35,7 @@ from .spectra import AngularRadialSpectra, angular_radial_spectra
 class StandardAnalysisResult:
     """Numerical results and detector images from ``standard_analyzer``."""
 
-    fit: MSEFitResult
+    fit: LinearFitResult
     powers: AngularModePowers
     spectra: AngularRadialSpectra
     parity_fractions: ParityPowerFractions
@@ -93,12 +93,8 @@ def standard_analyzer(
     q_y: ArrayLike,
     intensity: ArrayLike,
     *,
-    q_range: tuple[float, float] | list[float] | None = None,
-    mode_limits: tuple[int, int] | list[int] | None = None,
-    q_min: float | None = None,
-    q_max: float | None = None,
-    n_max: int | None = None,
-    m_max: int | None = None,
+    q_range: tuple[float, float] | list[float],
+    mode_limits: tuple[int, int] | list[int],
     even_only: bool = False,
     uncertainty: ArrayLike | None = None,
     sample_weight: ArrayLike | None = None,
@@ -115,10 +111,9 @@ def standard_analyzer(
 ) -> StandardAnalysisResult:
     """Fit the selected mode grid and save a multi-panel PNG summary.
 
-    ``q_range=(q_min, q_max)`` and ``mode_limits=(n_max, m_max)`` are the
-    preferred high-level inputs; two-element lists are accepted as well. The
-    four separate legacy keywords remain supported, but the two forms cannot
-    be mixed. By default the fit uses the full rectangle. With
+    ``q_range=(q_min, q_max)`` and ``mode_limits=(n_max, m_max)`` define the
+    annulus and rectangular basis truncation; two-element lists are accepted
+    as well. By default the fit uses the full rectangle. With
     ``even_only=True``, only even angular orders are fitted for all radial
     orders up to ``m_max``, enforcing antipodal symmetry in the fitted image.
     Supplying ``uncertainty`` activates uncertainty-weighted least squares.
@@ -148,10 +143,6 @@ def standard_analyzer(
     q_min, q_max, n_max, m_max = _resolve_analysis_arguments(
         q_range=q_range,
         mode_limits=mode_limits,
-        q_min=q_min,
-        q_max=q_max,
-        n_max=n_max,
-        m_max=m_max,
     )
 
     q_z, q_y, intensity = np.broadcast_arrays(
@@ -760,28 +751,9 @@ def _resolve_analysis_arguments(
     *,
     q_range,
     mode_limits,
-    q_min,
-    q_max,
-    n_max,
-    m_max,
 ):
-    if q_range is not None:
-        if q_min is not None or q_max is not None:
-            raise ValueError("use either q_range or q_min/q_max, not both")
-        q_values = _two_values(q_range, "q_range")
-    else:
-        if q_min is None or q_max is None:
-            raise ValueError("supply q_range=(q_min, q_max)")
-        q_values = (q_min, q_max)
-
-    if mode_limits is not None:
-        if n_max is not None or m_max is not None:
-            raise ValueError("use either mode_limits or n_max/m_max, not both")
-        mode_values = _two_values(mode_limits, "mode_limits")
-    else:
-        if n_max is None or m_max is None:
-            raise ValueError("supply mode_limits=(n_max, m_max)")
-        mode_values = (n_max, m_max)
+    q_values = _two_values(q_range, "q_range")
+    mode_values = _two_values(mode_limits, "mode_limits")
 
     lower = float(q_values[0])
     upper = float(q_values[1])

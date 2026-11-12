@@ -305,35 +305,3 @@ def test_log_intensity_colorbar_masks_only_the_display(tmp_path):
     assert result.output_path.exists()
     assert result.selected_mask[tuple(negative_position)]
     assert result.input_image[tuple(negative_position)] == -0.25
-
-
-def test_standard_analyzer_rejects_mixed_pair_and_legacy_arguments(tmp_path):
-    with pytest.raises(ValueError, match="either q_range"):
-        standard_analyzer(
-            np.array([0.2, -0.2, 0.3, -0.3]),
-            np.array([0.1, -0.1, -0.1, 0.1]),
-            np.ones(4),
-            q_range=(0.1, 0.5),
-            q_min=0.1,
-            q_max=0.5,
-            mode_limits=(0, 0),
-            output_path=tmp_path / "unused.png",
-        )
-
-
-def test_standard_analyzer_keeps_legacy_separate_keywords(tmp_path):
-    axis = np.linspace(-1.0, 1.0, 21)
-    q_z, q_y = np.meshgrid(axis, axis)
-    q = np.hypot(q_z, q_y)
-    intensity = np.where((q >= 0.2) & (q <= 0.8), 2.0 + 0.2 * q_z, np.nan)
-    result = standard_analyzer(
-        q_z,
-        q_y,
-        intensity,
-        q_min=0.2,
-        q_max=0.8,
-        n_max=1,
-        m_max=1,
-        output_path=tmp_path / "legacy.png",
-    )
-    assert result.output_path.exists()

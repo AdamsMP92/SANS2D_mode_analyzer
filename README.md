@@ -55,6 +55,7 @@ pixi run example
 pixi run experimental-example
 pixi run prl-example
 pixi run numagsans-example
+pixi run analyze-numagsans-ivr40
 pixi run analyze-arxiv-2606-18791
 pixi run analyze-prl-135-196706
 ```
@@ -70,9 +71,10 @@ The example creates a noisy synthetic detector pattern proportional to
 
 where `F` is the normalized spherical form-factor amplitude.  It then fits a
 rectangular mode grid over `0.5 <= qR <= 5.0` and writes
-`examples/output/synthetic_sphere_fit.png`.  The PNG contains the input, fit, and
-residual in its upper row and the cosine and sine angular powers in its lower
-row.  The complete beginner-oriented script is in
+`examples/output/synthetic_sphere_fit.png`. The PNG contains the standard
+five-row overview of the input, fit, residual, angular powers, block
+statistics, mode-power maps, and radial spectra. The complete
+beginner-oriented script is in
 [`examples/synthetic_sphere_fit.py`](examples/synthetic_sphere_fit.py).
 The detector construction, sphere model, white-noise addition, and insertion
 onto the masked detector grid are separate short functions in
@@ -98,18 +100,15 @@ their reciprocal-space origin shifted.
 
 `examples/numagsans_ivr40_3_spin_flip_fit.py` analyzes and compares the
 simulated average spin-flip cross section `S_sf` from the IVR40 output indices
-1 and 2. The original NuMagSANS output is a very fine `1000 x 1000` polar
-product grid. The retained CSV files contain only `qz`, `qy`, `q`, `theta`,
-and `S_sf`. The example removes the duplicated `theta = 2 pi` endpoint and
-area-averages the polar samples onto an equally spaced `161 x 161` Cartesian
-grid. The polar source samples are weighted by `q`, which accounts for the
-Jacobian of `q dq dtheta`; the resulting square cells can then be analyzed as
-ordinary equal-area detector pixels. The derived maps are stored as
-`SANS2D_cartesian.csv`. The example writes one standard-analysis overview per
-data set and a direct comparison of the fitted radial spectra `I_0^c(q)` and
-`I_2^c(q)`. Since these deterministic simulation data have no experimental
-uncertainty column, fit-uncertainty diagnostics are conditional on the
-residual of the finite mode truncation.
+1 and 2. The retained `161 x 161` Cartesian CSV files contain `qz`, `qy`, `q`,
+`theta`, and `S_sf`; the original polar output and conversion script are not
+part of this repository. The example loads these prepared maps, writes one
+standard-analysis overview per data set, and directly compares the fitted
+radial spectra `I_0^c(q)` and `I_2^c(q)`. Since these deterministic simulation
+data have no experimental uncertainty column, fit-uncertainty diagnostics are
+conditional on the residual of the finite mode truncation. The data-local
+[`README`](experimental_data/NuMagSANS_IVR40/README.md) documents the retained
+format and reproducible analysis task.
 
 ## Standard analyzer
 
@@ -153,8 +152,9 @@ covariance and F tests are conditional on that model; they are not calibrated
 for geometric coverage weights with unknown pixel-noise variance. For
 experimental coverage-weighted fits, supply absolute measurement errors.
 
-The returned object contains the numerical fit, reconstructed and residual
-data, selection mask, effective weights, and angular powers.
+The returned object contains the numerical linear fit, reconstructed and
+residual data, selection mask, effective weights, angular powers, block tests,
+and radial spectra.
 
 Set `beam_centering=True` to run parity-based centering immediately before the
 standard fit. The analyzer dispatches from the input shape: a one-dimensional
@@ -420,7 +420,9 @@ one_mode = evaluate_expansion(
 )
 ```
 
-`fit_mse` currently performs an unweighted linear least-squares fit, which is
-equivalent to minimizing the ordinary sample MSE.  Experimental uncertainty
-weights, pixel-area integration, masks, and symmetry-specific selectors can be
-added as separate layers without changing the explicit mode-index interface.
+`fit_mse` performs an unweighted linear least-squares fit, equivalent to
+minimizing the ordinary sample MSE. Use `fit_wls` for supplied measurement
+uncertainties and optional sample weights. The standard analyzer additionally
+supports detector masks, fractional annulus coverage, pixel-integrated basis
+functions, and optional parity-based centering without changing the explicit
+mode-index convention.

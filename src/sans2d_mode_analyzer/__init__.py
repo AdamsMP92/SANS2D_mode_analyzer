@@ -8,7 +8,7 @@ from .basis import (
     radial_mode,
 )
 from .block_test import AngularBlockTests, angular_block_tests
-from .fit import MSEFitResult, fit_design_matrix, fit_mse, fit_wls
+from .fit import LinearFitResult, fit_design_matrix, fit_mse, fit_wls
 from .indices import ModeIndex, even_angular_indices, rectangular_indices
 from .io import DetectorData, load_ascii_detector_data, load_ill_nexus
 from .power import (
@@ -47,7 +47,7 @@ from .spectra import AngularRadialSpectra, angular_radial_spectra
 from .standard_analyzer import StandardAnalysisResult, standard_analyzer
 
 __all__ = [
-    "MSEFitResult",
+    "LinearFitResult",
     "ModeIndex",
     "DetectorData",
     "AngularModePowers",

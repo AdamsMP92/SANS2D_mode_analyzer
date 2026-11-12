@@ -13,7 +13,7 @@ from .indices import ModeIndex, validate_indices
 
 
 @dataclass(frozen=True)
-class MSEFitResult:
+class LinearFitResult:
     """Result of a linear least-squares fit.
 
     ``mse`` always refers to the unweighted detector-space residuals.
@@ -62,7 +62,7 @@ def fit_mse(
     q_min: float,
     q_max: float,
     rcond: float | None = None,
-) -> MSEFitResult:
+) -> LinearFitResult:
     """Fit exactly the supplied modes by minimizing the unweighted MSE.
 
     ``q``, ``theta``, and ``values`` may be one- or multi-dimensional but must
@@ -94,7 +94,7 @@ def fit_wls(
     sample_weight: ArrayLike | None = None,
     absolute_uncertainty: bool = True,
     rcond: float | None = None,
-) -> MSEFitResult:
+) -> LinearFitResult:
     r"""Fit selected modes by uncertainty-weighted least squares.
 
     The minimized statistic is
@@ -161,7 +161,7 @@ def fit_design_matrix(
     sample_weight: ArrayLike | None = None,
     absolute_uncertainty: bool = True,
     rcond: float | None = None,
-) -> MSEFitResult:
+) -> LinearFitResult:
     """Fit a precomputed, possibly pixel-integrated design matrix.
 
     The matrix must have shape ``values.shape + (number_of_modes,)``.  This
@@ -215,7 +215,7 @@ def _fit_linear(
     measurement_uncertainty: ArrayLike | None,
     absolute_uncertainty: bool,
     rcond: float | None,
-) -> MSEFitResult:
+) -> LinearFitResult:
     modes = validate_indices(indices)
     q_array, theta_array, value_array = np.broadcast_arrays(
         np.asarray(q, dtype=float),
@@ -322,7 +322,7 @@ def _solve_design_matrix(
     else:
         residual_variance = float("nan")
         coefficient_covariance = np.full((len(modes), len(modes)), np.nan)
-    return MSEFitResult(
+    return LinearFitResult(
         indices=modes,
         coefficients=np.asarray(coefficients, dtype=float),
         fitted_values=fitted_flat.reshape(shape),
