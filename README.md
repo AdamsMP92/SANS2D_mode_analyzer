@@ -408,46 +408,6 @@ demonstrated. Agreement with a finite reference truncation is a numerical
 stability diagnostic, not proof that the reference itself is free of
 overfitting.
 
-## Angular template tests
-
-The template tests are deliberately separate from `standard_analyzer(...)`
-and can be applied to its fitted coefficients as a second analysis step:
-
-```python
-from sans2d_mode_analyzer import (
-    test_sin_squared,
-    test_sin_squared_cos_squared,
-)
-
-sin2 = test_sin_squared(result.fit.coefficients, result.fit.indices)
-spin_flip = test_sin_squared_cos_squared(
-    result.fit.coefficients,
-    result.fit.indices,
-)
-
-print(sin2.explained_power_fraction)
-print(sin2.pair_mismatch_power_fraction)
-print(sin2.forbidden_mode_power_fraction)
-```
-
-Both tests leave the radial amplitude `A(q)` unrestricted within the fitted
-radial basis and project the complete coefficient vector onto the requested
-angular-template subspace. The residual is separated into
-
-- a mismatch between the constant and target cosine amplitudes; and
-- power in all other cosine and sine modes, which are forbidden by the exact
-  template.
-
-For the conventional Fourier expansion `a_0(q) + a_n(q) cos(n theta)`, both
-`sin(theta)^2` and `sin(theta)^2 cos(theta)^2` require
-`a_n(q) / a_0(q) = -1`, with `n = 2` and `n = 4`, respectively. The package
-uses an orthonormal angular basis, so the equivalent internal coefficient
-condition is `c_n(q) / c_0(q) = -1/sqrt(2)`, not `-1`.
-
-These fractions diagnose agreement with an ideal angular form conditional on
-the fitted expansion. They do not yet propagate coefficient uncertainty or
-replace checks of centering, masking, reduction, and the selected `q` range.
-
 ## Example
 
 ```python

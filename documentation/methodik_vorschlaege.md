@@ -23,16 +23,13 @@ Plausibilitätschecks, keine Ergebnisse.
 
 Man fittet eine große, generische Basis und lässt die Daten auswählen, welche
 Struktur in diesem Freiraum tatsächlich besetzt ist. Die Überparametrisierung ist
-dabei gewollt. Daraus ergeben sich drei Fragen, an denen sich alle Kennzahlen
+dabei gewollt. Daraus ergeben sich zwei Fragen, an denen sich alle Kennzahlen
 messen lassen sollten:
 
 1. **Signalqualität:** Gibt es ungerade Anteile, die dort nicht sein sollten, und
    welche Ursache haben sie?
 2. **Struktur:** Welche Winkelordnungen sind stabil und signifikant enthalten, und
    welche fitten nur Rauschen?
-3. **Formvergleich (optional):** Ist das Signal bereits durch eine vorgegebene
-   Winkelform wie sin²θ oder sin²θ cos²θ beschrieben?
-
 Die vorhandene Basis, der WLS-Fit, die Kovarianz, die Blocktests und die
 radialen Spektren tragen dieses Konzept bereits. Die Vorschläge betreffen vor
 allem die **abgeleiteten Kennzahlen**. Diese beruhen bisher auf Leistung
@@ -40,7 +37,7 @@ allem die **abgeleiteten Kennzahlen**. Diese beruhen bisher auf Leistung
 enthalten sie deshalb einen systematischen Rauschbeitrag, oder ihre Skala hat
 keinen sinnvollen Nullpunkt.
 
-Priorität: **1 → 2 → 3 → 4**, danach 5 und 6.
+Priorität: **1 → 2 → 3**, danach 4 und 5.
 
 ---
 
@@ -529,7 +526,7 @@ Aufbau vertikal ist, kommt auch die Schwerkraft als Ursache in Betracht.
 ### Wie
 
 Neue Funktion, zum Beispiel `odd_mode_shift_test(coefficients, covariance,
-indices, q_min, q_max)` in `mode_tests.py` oder `structure.py`:
+indices, q_min, q_max)` in `structure.py`:
 
 1. **Gerader Teil:** Î_even = Σ_{|n| gerade} ĉ_nm Φ_nm.
 2. **Analytischer Gradient:** ∂_q R_m über die Legendre-Ableitung
@@ -664,118 +661,7 @@ Instrumentgeometrie und unabhängige Informationen zum Strahlzentrum.
 
 ---
 
-## 4. Template-Tests neu definieren
-
-### Warum
-
-Ziel der Tests ist die Frage: **Wie gut ist das Signal bereits durch
-A(q)·sin²θ bzw. A(q)·sin²θ cos²θ beschrieben?** Die jetzige Implementierung
-berechnet dafür exakt den Least-Squares-Fit von A(q)·f(θ) im Parseval-Maß.
-Rechnerisch ist das korrekt. Die Skala `explained_power_fraction` beantwortet
-die Frage aber schlecht, weil beide Templates einen großen konstanten Anteil
-enthalten (sin²θ = ½(1 − cos 2θ)):
-
-| Muster | a_h/a₀ | explained |
-|---|---|---|
-| exaktes Template | −1 | 1.00 |
-| **rein isotrop** | 0 | **0.667** |
-| 1 + cos hθ (umgekehrtes Vorzeichen) | +1 | 0.11 |
-
-Da reale Intensitäten nicht negativ sind und c₀ fast immer dominiert, liegt
-jedes Muster grob bei 2/3. Bei 10 mT (zu 99.3 % isotrop) ergibt der
-sin²θcos²θ-Test 0.661. Außerdem enthält die Fraktion weder Rauschen noch
-Gewichte.
-
-### Wie
-
-Die Template-Modelle direkt **an die Detektordaten fitten**, mit denselben
-Gewichten, Masken und gegebenenfalls Pixelintegration wie der Hauptfit, und
-gegeneinander vergleichen:
-
-| Modell | Spalten |
-|---|---|
-| iso | R_m(q) |
-| tpl | R_m(q)·f(θ) |
-| iso+tpl (optional, z. B. unpolarisiert: Kern plus magnetisch) | R_m(q) und R_m(q)·f(θ) |
-| voll | rechteckige Basis |
-
-Die Spalten R_m(q)·f(θ) sind nicht orthonormal. Das ist für `lstsq` kein
-Problem, und sie lassen sich über `fit_design_matrix` übergeben.
-
-Kennzahlen:
-
-- **Verträglichkeit:** Δχ² = χ²_tpl − χ²_voll gegen χ²/F mit
-  Δν = K_voll − K_tpl. Das beantwortet die Frage „Reicht das Template, um die
-  Daten bis aufs Rauschen zu beschreiben?“
-- **Erklärter Anteil der Anisotropie:**
-  R²_rel = (χ²_iso − χ²_tpl) / (χ²_iso − χ²_voll).
-  Der Wert ist 0 für „nicht besser als isotrop“, 1 für „erklärt die gesamte
-  Winkelstruktur“ und negativ, wenn das Template schlechter ist als isotrop.
-- **Beschreibend:** das Verhältnis r(q) = a_h(q)/a₀(q) mit Fehlerband aus der
-  Kovarianz von I_h und I₀ als Plot mit der Sollinie bei −1, ausgeblendet dort,
-  wo |I₀| klein ist. Daran sieht man, in welchem q-Bereich das Template passt.
-
-`angular_template_test` kann für die Koeffizientenzerlegung erhalten bleiben.
-`explained_power_fraction` sollte dann aber umbenannt oder mit einem deutlichen
-Hinweis auf die Grundlinie versehen werden, damit sie nicht als Antwort auf die
-obige Frage gelesen wird.
-
-### Vorteil
-
-- Die Kennzahl hat einen echten Nullpunkt und beantwortet die eigentliche Frage.
-- Rauschen, Maske und Gewichte gehen korrekt ein. Ein „passt nicht“ wird von
-  „zu verrauscht, um es zu entscheiden“ unterscheidbar.
-- Beliebige Winkelformen f(θ) lassen sich mit demselben Gerüst testen.
-
-### Tests
-
-- Isotropes Muster: R²_rel ≈ 0, und Δχ² ist für sin²θ signifikant.
-- Exaktes A(q) sin²θ mit Rauschen: Δχ² ist unauffällig, R²_rel ≈ 1.
-- Muster mit umgekehrtem Vorzeichen (1 + cos 2θ): R²_rel < 0.
-
-### Einschätzung von Codex
-
-**Den Datenraum-Modellvergleich würde ich übernehmen, das vorgeschlagene
-R²_rel in dieser Form nicht.** Für vorab festgelegte, verschachtelte Modelle
-mit denselben Daten, Masken, Gewichten und derselben Pixelintegration ist
-Δχ² bzw. der passende F-Test eine sinnvolle Verträglichkeitsprüfung. Die
-Referenzverteilung setzt allerdings ein dazu passendes Rauschmodell voraus.
-
-Die 2/3-Grundlinie der bestehenden geometrischen Projektion für ein exakt
-isotropes Signal ist korrekt; sie ist keine Anpassungswahrscheinlichkeit.
-Aus der Positivität einer Intensität folgt aber nicht, dass jedes beliebige
-Muster ungefähr diese Grundlinie erreicht.
-
-Beim vorgeschlagenen Verhältnis
-
-$$
-R^2_{\mathrm{rel}}
-= \frac{Q_{\mathrm{iso}}-Q_{\mathrm{tpl}}}
-       {Q_{\mathrm{iso}}-Q_{\mathrm{voll}}}
-$$
-
-ist gerade der behauptete isotrope Nullpunkt ungültig: Für rauschfreie
-isotrope Daten gilt Q_iso = Q_voll = 0, während ein reines sin²θ-Template mit
-festem Verhältnis zwischen isotropem Anteil und Harmonischer im Allgemeinen
-Q_tpl > 0 hat. Das Verhältnis ist dann undefiniert. Bei nahezu isotropen
-Daten kann es sehr große negative Werte annehmen. Eine synthetische
-Gegenprüfung mit schwach verrauschten isotropen Daten ergab etwa −8.1·10⁵.
-Der Test „isotrop → R²_rel ≈ 0“ sollte deshalb nicht umgesetzt werden.
-
-Als Ergebnisse eignen sich der festgelegte Template-gegen-Vollmodell-Test
-und beschreibend r(q) = a_h(q)/a₀(q). Für dessen Unsicherheit sind auch die
-Kreuzkovarianzen zwischen I_h und I₀ nötig; nahe einem verschwindenden Nenner
-ist eine einfache Quotientenfehlerrechnung unzuverlässig.
-
-Das Modell „iso+tpl“ beantwortet außerdem eine andere Frage: Bei frei
-vorzeichenbehafteten radialen Amplituden spannt es unabhängige isotrope und
-harmonische Anteile auf und prüft nicht mehr das feste Verhältnis
-a_h/a₀ = −1. Werden stattdessen Positivitätsbedingungen eingeführt, können
-sich die Referenzverteilungen der Tests ändern.
-
----
-
-## 5. Trunkierung: Informationskriterien als Ergänzung
+## 4. Trunkierung: Informationskriterien als Ergänzung
 
 ### Warum
 
@@ -844,7 +730,7 @@ Berücksichtigung der Auswahl.
 
 ---
 
-## 6. Basisunabhängigkeit belegen: Referenz mit Fourier pro Ring
+## 5. Basisunabhängigkeit belegen: Referenz mit Fourier pro Ring
 
 ### Warum
 
@@ -891,7 +777,7 @@ Basisunabhängigkeit.
 
 ---
 
-## 7. Kleinere Punkte
+## 6. Kleinere Punkte
 
 - **Achsenbeschriftung** im Leistungspanel: `P_n^2/P_max^2` in `P_n/P_max`
   ändern. Dann kann die Erklärung im Supplement entfallen.
@@ -902,8 +788,8 @@ Basisunabhängigkeit.
   Funktion `_plot_standard_analysis(result, ...)` auslagern.
 - **Mehrfachtests im Plot:** neben der 95-%-Linie die Holm-Schwelle aus Punkt 1
   anzeigen.
-- **Supplement nachziehen:** Neue Größen (rauschkorrigierte Leistungen,
-  Verschiebungstest, Template-Modellvergleich) nach dem bisherigen Muster als
+- **Supplement nachziehen:** Neue Größen (rauschkorrigierte Leistungen und
+  Verschiebungstest) nach dem bisherigen Muster als
   Gleichungen mit zugehörigen Tests in `test_supplementary_equations.py`
   dokumentieren.
 
@@ -922,7 +808,7 @@ korrigierte p-Werte oder die jeweils zutreffenden Einzelentscheidungen.
 
 Neue Gleichungen und synthetische Regressionstests sollten gemeinsam mit den
 validierten Implementierungen ins Supplement übernommen werden. Die unter
-den Punkten 1–6 genannten Voraussetzungen gehören dabei ausdrücklich zur
+den Punkten 1–5 genannten Voraussetzungen gehören dabei ausdrücklich zur
 Definition und Interpretation der neuen Kennzahlen.
 
 ## Zusammenfassung
@@ -932,9 +818,8 @@ Definition und Interpretation der neuen Kennzahlen.
 | 1 | Auswahl über Signifikanz und reduzierter Refit | Was ist stabil enthalten? | mittel |
 | 2 | Rauschkorrektur der Leistungen und Fraktionen | Was liegt über dem Rauschen? | gering |
 | 3 | Verschiebungstest der ungeraden Moden | Ist die ungerade Struktur Zentrierung oder etwas anderes? | mittel |
-| 4 | Template-Modellvergleich mit χ² und R²_rel | Reicht sin²θ bzw. sin²θcos²θ? | gering–mittel |
-| 5 | AIC/BIC und Stabilität der Auswahl | Ist die Basisgröße angemessen, sind die Aussagen robust? | gering |
-| 6 | Fourier-Referenz pro Ring | Erfindet die radiale Glättung Struktur? | gering |
+| 4 | AIC/BIC und Stabilität der Auswahl | Ist die Basisgröße angemessen, sind die Aussagen robust? | gering |
+| 5 | Fourier-Referenz pro Ring | Erfindet die radiale Glättung Struktur? | gering |
 
 ### Priorisierung von Codex
 
@@ -949,10 +834,8 @@ Grundlage weiter verfügbar sein.
    Achsenbeschriftung können parallel dazu als kleine Änderungen erfolgen.
 2. **Rauschdiagnostik und Holm-Korrektur ergänzen:** Rohleistungen erhalten,
    zusätzliche Größen eindeutig benennen und Fehlerraten synthetisch prüfen.
-3. **Festgelegte Template-Tests und Ringvergleich ergänzen:** Die beschriebenen
-   Grenzen von R²_rel und gemeinsamer Datennutzung berücksichtigen.
-   AIC/BIC können hinzukommen, sobald Likelihood und Skalenbehandlung
-   festgelegt sind.
+3. **Ringvergleich und Informationskriterien ergänzen:** AIC/BIC können
+   hinzukommen, sobald Likelihood und Skalenbehandlung festgelegt sind.
 4. **Verschiebungstest entwickeln und kalibrieren:** Diskrete Fit-Antwort,
    Rang, Unsicherheit von G und Kanalphysik gemeinsam berücksichtigen. Dies
    ist der anspruchsvollste neue methodische Baustein.

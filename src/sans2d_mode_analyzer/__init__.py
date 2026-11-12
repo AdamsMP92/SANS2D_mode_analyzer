@@ -15,12 +15,6 @@ from .convergence import (
 from .fit import MSEFitResult, fit_design_matrix, fit_mse, fit_wls
 from .indices import ModeIndex, even_angular_indices, rectangular_indices
 from .io import DetectorData, load_ascii_detector_data, load_ill_nexus
-from .mode_tests import (
-    AngularTemplateTest,
-    angular_template_test,
-    test_sin_squared,
-    test_sin_squared_cos_squared,
-)
 from .power import (
     AngularModePowers,
     ParityPowerFractions,
@@ -63,7 +57,6 @@ __all__ = [
     "ModeConvergenceResult",
     "DetectorData",
     "AngularModePowers",
-    "AngularTemplateTest",
     "AngularBlockTests",
     "AngularRadialSpectra",
     "AffineDetectorGeometry",
@@ -81,7 +74,6 @@ __all__ = [
     "angular_block_tests",
     "angular_mode_powers",
     "angular_radial_spectra",
-    "angular_template_test",
     "basis_function",
     "design_matrix",
     "evaluate_expansion",
@@ -111,7 +103,5 @@ __all__ = [
     "standard_analyzer",
     "symmetry_diagnostic",
     "symmetry_fold",
-    "test_sin_squared",
-    "test_sin_squared_cos_squared",
     "valid_pixel_mask",
 ]

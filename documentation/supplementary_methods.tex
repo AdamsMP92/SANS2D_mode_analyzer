@@ -44,7 +44,7 @@ and real angular Fourier modes. We specify the linear fit, its covariance,
 the associated Parseval powers, angular block statistics and optional numerical
 Holm diagnostics, and the radial coefficient spectra. We also describe detector selection, optional pixel
 integration and parity-based centering, symmetry diagnostics, reduced
-reconstructions, truncation checks, and angular-template projections.
+reconstructions, and truncation checks.
 All quantities refer to the chosen annulus and finite fitted expansion.
 \end{abstract}
 
@@ -735,41 +735,6 @@ not predictive validity or freedom from overfitting. Centering and pixel
 integration are not options of the current convergence wrapper; centering
 can be applied explicitly before a sweep.
 
-\subsection{Angular-template projections}
-
-Two optional template tests examine $I(q,\theta)=A(q)\sin^2\theta$ and
-$I(q,\theta)=A(q)\sin^2\theta\cos^2\theta$, leaving $A(q)$ unrestricted
-within the fitted radial basis. Since
-\begin{equation}
- \sin^2\theta=\tfrac12[1-\cos(2\theta)],\qquad
- \sin^2\theta\cos^2\theta=\tfrac18[1-\cos(4\theta)],
- \label{eq:templates}
-\end{equation}
-the target harmonic is $h=2$ or $h=4$, respectively. Both require
-$a_h(q)=-a_0(q)$ in conventional Fourier amplitudes, or, with the present
-orthonormal convention,
-\begin{equation}
- c_{h,m}=-\frac{c_{0,m}}{\sqrt2}\quad\text{for every }m,
- \label{eq:template-ratio}
-\end{equation}
-and zero coefficients in all other angular contributions. The code
-requires matching radial index sets in the constant and target cosine
-blocks. With $\bm v=(1,-1/\sqrt2)^{\trans}$ and
-$\bm d_m=(\widehat c_{0,m},\widehat c_{h,m})^{\trans}$, its Euclidean
-projection is
-\begin{equation}
- \bm d_m^{\mathrm{tpl}}=
- \frac{\bm v^{\trans}\bm d_m}{\bm v^{\trans}\bm v}\bm v.
- \label{eq:template-projection}
-\end{equation}
-All other template coefficients are set to zero. The squared residual
-splits into the mismatch within these pairs and the power in forbidden
-angular modes. Dividing by $\mathcal{P}$ gives the returned pair-mismatch,
-forbidden-mode, and total residual fractions; the explained fraction is
-one minus the residual fraction. This is a Parseval-metric projection,
-not a covariance-weighted hypothesis test. It propagates no coefficient
-uncertainty and imposes no positivity constraint on $A(q)$.
-
 \subsection{Implementation correspondence and data conventions}
 
 The definitions above correspond to \texttt{basis.py} and \texttt{indices.py}
@@ -777,8 +742,8 @@ The definitions above correspond to \texttt{basis.py} and \texttt{indices.py}
 \texttt{power.py} (powers, parity, and power selection), \texttt{spectra.py}
 (radial spectra), and \texttt{block\_test.py} (angular block tests), all
 under \texttt{src/sans2d\_mode\_analyzer/}. Explicit detector operations
-reside in \texttt{preconditioning.py}, the truncation sweep in
-\texttt{convergence.py}, and template projections in \texttt{mode\_tests.py}.
+reside in \texttt{preconditioning.py} and the truncation sweep in
+\texttt{convergence.py}.
 The \texttt{standard\_analyzer} combines sample selection, fitting over the
 selected modes, and the diagnostic overview. The numerical results and
 spectra are also returned directly.
