@@ -56,6 +56,89 @@ def test_standard_analyzer_fits_and_writes_summary(tmp_path):
     )
 
 
+def test_standard_analyzer_accepts_explicit_sparse_indices(monkeypatch, tmp_path):
+    from matplotlib.figure import Figure
+
+    figures = []
+    monkeypatch.setattr(
+        Figure,
+        "savefig",
+        lambda figure, *args, **kwargs: figures.append(figure),
+    )
+    q_min, q_max = 0.2, 1.0
+    axis = np.linspace(-q_max, q_max, 41)
+    q_z, q_y = np.meshgrid(axis, axis)
+    q = np.hypot(q_z, q_y)
+    theta = np.arctan2(q_y, q_z)
+    inside = (q >= q_min) & (q <= q_max)
+    selected_indices = [(0, 0), (3, 1), (-2, 2)]
+    coefficients = [3.0, -0.4, 0.7]
+    intensity = np.full(q.shape, np.nan)
+    intensity[inside] = evaluate_expansion(
+        q[inside],
+        theta[inside],
+        coefficients,
+        selected_indices,
+        q_min=q_min,
+        q_max=q_max,
+    )
+
+    result = standard_analyzer(
+        q_z,
+        q_y,
+        intensity,
+        q_range=(q_min, q_max),
+        indices=selected_indices,
+        output_path=tmp_path / "custom.png",
+    )
+
+    assert result.fit.indices == tuple(selected_indices)
+    np.testing.assert_allclose(result.fit.coefficients, coefficients, atol=1e-12)
+    assert any("custom basis" in title.get_text() for title in figures[0].texts)
+    axes = {axis.get_title(): axis for axis in figures[0].axes}
+    assert axes["cosine radial spectra $I_n^c(q)$"].get_legend_handles_labels()[1] == [
+        "n=0",
+        "n=3",
+    ]
+    assert axes["sine radial spectra $I_n^s(q)$"].get_legend_handles_labels()[1] == [
+        "n=2"
+    ]
+
+
+def test_standard_analyzer_requires_one_mode_specification(tmp_path):
+    coordinates = np.array([0.2, -0.2, 0.3, -0.3])
+    transverse = np.array([0.1, -0.1, -0.1, 0.1])
+    intensity = np.ones(4)
+    with pytest.raises(ValueError, match="exactly one"):
+        standard_analyzer(
+            coordinates,
+            transverse,
+            intensity,
+            q_range=(0.1, 0.5),
+            output_path=tmp_path / "neither.png",
+        )
+    with pytest.raises(ValueError, match="exactly one"):
+        standard_analyzer(
+            coordinates,
+            transverse,
+            intensity,
+            q_range=(0.1, 0.5),
+            mode_limits=(0, 0),
+            indices=[(0, 0)],
+            output_path=tmp_path / "both.png",
+        )
+    with pytest.raises(ValueError, match="even_only"):
+        standard_analyzer(
+            coordinates,
+            transverse,
+            intensity,
+            q_range=(0.1, 0.5),
+            indices=[(0, 0)],
+            even_only=True,
+            output_path=tmp_path / "ambiguous.png",
+        )
+
+
 @pytest.mark.parametrize(("n_max", "signed_orders"), [(3, (0, 2, -2)), (1, (0,)), (0, (0,))])
 def test_standard_analyzer_even_only_refits_and_plots_selected_orders(
     n_max, signed_orders, monkeypatch, tmp_path

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from .block_test import AngularBlockTests, angular_block_tests
 from .fit import LinearFitResult, fit_design_matrix, fit_mse, fit_wls
-from .indices import even_angular_indices, rectangular_indices
+from .indices import even_angular_indices, rectangular_indices, validate_indices
 from .io import DetectorData
 from .power import (
     AngularModePowers,
@@ -94,7 +95,8 @@ def standard_analyzer(
     intensity: ArrayLike,
     *,
     q_range: tuple[float, float] | list[float],
-    mode_limits: tuple[int, int] | list[int],
+    mode_limits: tuple[int, int] | list[int] | None = None,
+    indices: Iterable[Sequence[int]] | None = None,
     even_only: bool = False,
     uncertainty: ArrayLike | None = None,
     sample_weight: ArrayLike | None = None,
@@ -111,11 +113,13 @@ def standard_analyzer(
 ) -> StandardAnalysisResult:
     """Fit the selected mode grid and save a multi-panel PNG summary.
 
-    ``q_range=(q_min, q_max)`` and ``mode_limits=(n_max, m_max)`` define the
-    annulus and rectangular basis truncation; two-element lists are accepted
-    as well. By default the fit uses the full rectangle. With
+    ``q_range=(q_min, q_max)`` defines the annulus. Supply either
+    ``mode_limits=(n_max, m_max)`` for a rectangular truncation or an explicit
+    ``indices=[(n,m), ...]`` list. Exactly the listed modes are fitted when
+    ``indices`` is used. By default a mode-limit fit uses the full rectangle. With
     ``even_only=True``, only even angular orders are fitted for all radial
-    orders up to ``m_max``, enforcing antipodal symmetry in the fitted image.
+    orders up to ``m_max``, enforcing antipodal symmetry in the fitted image;
+    this shortcut cannot be combined with explicit ``indices``.
     Supplying ``uncertainty`` activates uncertainty-weighted least squares.
     ``sample_weight`` can additionally contain fractional pixel coverage.
     With absolute uncertainties, the supplied pixel errors are propagated
@@ -140,10 +144,13 @@ def standard_analyzer(
     """
     import matplotlib.pyplot as plt
 
-    q_min, q_max, n_max, m_max = _resolve_analysis_arguments(
+    q_min, q_max, indices, basis_label = _resolve_analysis_arguments(
         q_range=q_range,
         mode_limits=mode_limits,
+        indices=indices,
+        even_only=even_only,
     )
+    m_max = max(m for _, m in indices)
 
     q_z, q_y, intensity = np.broadcast_arrays(
         np.asarray(q_z, dtype=float),
@@ -213,8 +220,6 @@ def standard_analyzer(
 
     q = np.hypot(q_z, q_y)
     theta = np.arctan2(q_y, q_z)
-    select_indices = even_angular_indices if even_only else rectangular_indices
-    indices = select_indices(n_max=n_max, m_max=m_max)
     selected = (
         np.isfinite(q_z)
         & np.isfinite(q_y)
@@ -498,11 +503,18 @@ def standard_analyzer(
     sine_lower_error = np.minimum(
         sine_uncertainty, np.maximum(sine_fraction - lower_limit, 0.0)
     )
-    angular_orders = powers.orders[::2] if even_only else powers.orders
-    sine_orders = angular_orders[1:]
+    angular_orders = np.asarray(
+        sorted({abs(n) for n, _ in fit.indices}), dtype=np.int64
+    )
+    cosine_orders = np.asarray(
+        sorted({n for n, _ in fit.indices if n >= 0}), dtype=np.int64
+    )
+    sine_orders = np.asarray(
+        sorted({abs(n) for n, _ in fit.indices if n < 0}), dtype=np.int64
+    )
     for axis, orders, fraction, lower_error, power_uncertainty, even_color, title in [
         (
-            cosine_axis, angular_orders, cosine_fraction, cosine_lower_error,
+            cosine_axis, cosine_orders, cosine_fraction, cosine_lower_error,
             cosine_uncertainty, "tab:blue", "cosine angular powers",
         ),
         (
@@ -515,7 +527,7 @@ def standard_analyzer(
             (orders[even], even_color, "even orders"),
             (orders[~even], "0.75", "odd orders"),
         ]:
-            if even_only and plotted_orders.size == 0:
+            if plotted_orders.size == 0:
                 continue
             axis.errorbar(
                 plotted_orders,
@@ -532,16 +544,17 @@ def standard_analyzer(
         axis.set_title(title)
         axis.set_xlabel("angular order n")
         axis.set_ylabel(r"relative power $P_n^2/P_{\max}^2$")
-        axis.set_xticks(angular_orders)
+        axis.set_xticks(orders)
         axis.set_yscale("log")
         axis.set_ylim(lower_limit, upper_limit)
         axis.grid(axis="y", alpha=0.25)
-        if orders.size or not even_only:
+        if orders.size:
             axis.legend(fontsize=8)
 
-    for axis, statistic, critical, valid, even_color, title in [
+    for axis, orders, statistic, critical, valid, even_color, title in [
         (
             cosine_test_axis,
+            cosine_orders,
             block_tests.cosine_statistic,
             block_tests.cosine_critical_value,
             block_tests.cosine_degrees_of_freedom > 0,
@@ -550,6 +563,7 @@ def standard_analyzer(
         ),
         (
             sine_test_axis,
+            sine_orders,
             block_tests.sine_statistic,
             block_tests.sine_critical_value,
             block_tests.sine_degrees_of_freedom > 0,
@@ -558,15 +572,16 @@ def standard_analyzer(
         ),
     ]:
         even = valid & (block_tests.orders % 2 == 0)
-        axis.plot(
-            block_tests.orders[even],
-            statistic[even],
-            "o",
-            color=even_color,
-            label="even orders",
-        )
-        if not even_only:
-            odd = valid & (block_tests.orders % 2 == 1)
+        if np.any(even):
+            axis.plot(
+                block_tests.orders[even],
+                statistic[even],
+                "o",
+                color=even_color,
+                label="even orders",
+            )
+        odd = valid & (block_tests.orders % 2 == 1)
+        if np.any(odd):
             axis.plot(
                 block_tests.orders[odd],
                 statistic[odd],
@@ -585,10 +600,10 @@ def standard_analyzer(
         axis.set_title(title)
         axis.set_xlabel("angular order n")
         axis.set_ylabel(r"$T_n$")
-        axis.set_xticks(angular_orders)
+        axis.set_xticks(orders)
         axis.set_yscale("log")
         axis.grid(axis="y", alpha=0.25)
-        if np.any(valid) or not even_only:
+        if np.any(valid):
             axis.legend(fontsize=8)
 
     max_fitted_order = angular_orders[-1]
@@ -628,7 +643,7 @@ def standard_analyzer(
             cmap="viridis",
         )
     for axis, orders, title in [
-        (cosine_map_axis, angular_orders, "cosine $(n,m)$ powers"),
+        (cosine_map_axis, cosine_orders, "cosine $(n,m)$ powers"),
         (sine_map_axis, sine_orders, "sine $(n,m)$ powers"),
     ]:
         axis.set_title(title)
@@ -654,7 +669,7 @@ def standard_analyzer(
     assert spectra.cosine_uncertainty is not None
     assert spectra.sine_uncertainty is not None
     colors = plt.get_cmap("tab10")
-    for order in angular_orders:
+    for order in cosine_orders:
         color = colors(int(order) % 10)
         cosine_spectra_axis.plot(
             spectra.q,
@@ -670,21 +685,22 @@ def standard_analyzer(
             alpha=0.18,
             linewidth=0.0,
         )
-        if order > 0:
-            sine_spectra_axis.plot(
-                spectra.q,
-                spectra.sine[order],
-                label=f"n={order}",
-                color=color,
-            )
-            sine_spectra_axis.fill_between(
-                spectra.q,
-                spectra.sine[order] - spectra.sine_uncertainty[order],
-                spectra.sine[order] + spectra.sine_uncertainty[order],
-                color=color,
-                alpha=0.18,
-                linewidth=0.0,
-            )
+    for order in sine_orders:
+        color = colors(int(order) % 10)
+        sine_spectra_axis.plot(
+            spectra.q,
+            spectra.sine[order],
+            label=f"n={order}",
+            color=color,
+        )
+        sine_spectra_axis.fill_between(
+            spectra.q,
+            spectra.sine[order] - spectra.sine_uncertainty[order],
+            spectra.sine[order] + spectra.sine_uncertainty[order],
+            color=color,
+            alpha=0.18,
+            linewidth=0.0,
+        )
     for axis, title in zip(
         [cosine_spectra_axis, sine_spectra_axis],
         [r"cosine radial spectra $I_n^c(q)$", r"sine radial spectra $I_n^s(q)$"],
@@ -699,7 +715,6 @@ def standard_analyzer(
             axis.legend(ncol=3, fontsize=7)
 
     angular_mode_count = len({n for n, _ in fit.indices})
-    basis_label = "even only" if even_only else "full basis"
     centering_summary = ""
     if beam_centering_method is not None:
         centering_summary = (
@@ -751,9 +766,10 @@ def _resolve_analysis_arguments(
     *,
     q_range,
     mode_limits,
+    indices,
+    even_only,
 ):
     q_values = _two_values(q_range, "q_range")
-    mode_values = _two_values(mode_limits, "mode_limits")
 
     lower = float(q_values[0])
     upper = float(q_values[1])
@@ -762,6 +778,16 @@ def _resolve_analysis_arguments(
     if lower < 0.0 or upper <= lower:
         raise ValueError("q_range requires 0 <= q_min < q_max")
 
+    if (mode_limits is None) == (indices is None):
+        raise ValueError("supply exactly one of mode_limits or indices")
+
+    if indices is not None:
+        if even_only:
+            raise ValueError("even_only cannot be combined with explicit indices")
+        resolved_indices = validate_indices(indices)
+        return lower, upper, resolved_indices, "custom basis"
+
+    mode_values = _two_values(mode_limits, "mode_limits")
     resolved_modes = []
     for value, name in zip(mode_values, ("n_max", "m_max")):
         if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
@@ -770,7 +796,11 @@ def _resolve_analysis_arguments(
         if integer < 0:
             raise ValueError(f"{name} must be non-negative")
         resolved_modes.append(integer)
-    return lower, upper, resolved_modes[0], resolved_modes[1]
+    n_max, m_max = resolved_modes
+    index_factory = even_angular_indices if even_only else rectangular_indices
+    resolved_indices = tuple(index_factory(n_max=n_max, m_max=m_max))
+    basis_label = "even only" if even_only else "full basis"
+    return lower, upper, resolved_indices, basis_label
 
 
 def _two_values(values, name):

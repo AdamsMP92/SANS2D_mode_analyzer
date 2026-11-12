@@ -9,7 +9,12 @@ from .basis import (
 )
 from .block_test import AngularBlockTests, angular_block_tests
 from .fit import LinearFitResult, fit_design_matrix, fit_mse, fit_wls
-from .indices import ModeIndex, even_angular_indices, rectangular_indices
+from .indices import (
+    ModeIndex,
+    angular_mode_indices,
+    even_angular_indices,
+    rectangular_indices,
+)
 from .io import DetectorData, load_ascii_detector_data, load_ill_nexus
 from .power import (
     AngularModePowers,
@@ -65,6 +70,7 @@ __all__ = [
     "SymmetryDiagnostic",
     "affine_detector_geometry",
     "angular_mode",
+    "angular_mode_indices",
     "angular_block_tests",
     "angular_mode_powers",
     "angular_radial_spectra",

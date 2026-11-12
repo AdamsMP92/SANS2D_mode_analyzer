@@ -46,6 +46,31 @@ def even_angular_indices(n_max: int, m_max: int) -> list[ModeIndex]:
     ]
 
 
+def angular_mode_indices(
+    angular_modes: Iterable[int],
+    m_max: int,
+) -> list[ModeIndex]:
+    """Combine selected signed angular modes with all radial modes to ``m_max``.
+
+    The input order of ``angular_modes`` is retained within every radial block.
+    For example, ``angular_mode_indices([0, 2, -2], 1)`` returns
+    ``[(0, 0), (2, 0), (-2, 0), (0, 1), (2, 1), (-2, 1)]``.
+    """
+    m_limit = _validate_limit(m_max, "m_max")
+    angular: list[int] = []
+    for position, n in enumerate(angular_modes):
+        if isinstance(n, bool) or not isinstance(n, (int, np.integer)):
+            raise TypeError(
+                f"angular mode at position {position} must be an integer"
+            )
+        angular.append(int(n))
+    if not angular:
+        raise ValueError("at least one angular mode is required")
+    if len(set(angular)) != len(angular):
+        raise ValueError("angular modes must not contain duplicates")
+    return [(n, m) for m in range(m_limit + 1) for n in angular]
+
+
 def validate_indices(indices: Iterable[Sequence[int]]) -> tuple[ModeIndex, ...]:
     """Normalize an arbitrary two-column index iterable.
 

@@ -10,6 +10,7 @@ sys.path.insert(0, str(repository))
 
 from sans2d_mode_analyzer import standard_analyzer
 from synthetic_models import powder_average_affine_noise_signal
+from sans2d_mode_analyzer import angular_mode_indices
 
 output_directory = repository / "examples" / "output"
 output_directory.mkdir(parents=True, exist_ok=True)
@@ -31,4 +32,20 @@ standard_analyzer(
     q_range=q_range,
     mode_limits=mode_limits,
     output_path=output_directory / "synthetic_sphere_fit.png",
+)
+
+
+ 
+indices = angular_mode_indices(
+    angular_modes=[0, 2],
+    m_max=14,
+)
+
+standard_analyzer(
+    q_z,
+    q_y,
+    noisy_image,
+    q_range=q_range,
+    indices=indices,
+    output_path=output_directory / "synthetic_sphere_fit2.png",
 )
