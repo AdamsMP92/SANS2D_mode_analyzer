@@ -688,9 +688,13 @@ The definitions above correspond to \path{basis.py} and \path{indices.py}
 \path{power.py} (powers and parity), \path{spectra.py} (radial spectra), and
 \path{block_test.py} (angular block tests). All source files lie under
 \path{src/sans2d_mode_analyzer/}. Explicit detector operations reside in
-\path{preconditioning.py}. The \path{standard_analyzer} combines sample selection, fitting over the
-selected modes, and the diagnostic overview. The numerical results and
-spectra are also returned directly.
+\path{preconditioning.py}. The \path{standard_analyzer} combines sample
+selection, fitting over the selected modes, and all numerical diagnostics.
+It returns the fit, detector-space arrays, powers, block tests, parity
+measures, and radial spectra independently of figure generation. The optional
+overview is rendered separately by \path{figure_backend.py}; setting
+\texttt{export\_figure=False} suppresses this rendering without changing the
+numerical analysis.
 
 The ILL NeXus loader maps the stored \texttt{qx1} direction to $q_z$,
 \texttt{qy1} to $q_y$, and converts the stored inverse-angstrom coordinates

@@ -52,41 +52,7 @@ class StandardAnalysisResult:
     beam_centering_refinement: CenterRefinementResult | None
     center_shift_q_z: float
     center_shift_q_y: float
-    output_path: Path
-
-
-def _orient_detector_image(
-    q_z: NDArray[np.float64],
-    q_y: NDArray[np.float64],
-    image: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """Return an image with rows along ``q_y`` and columns along ``q_z``.
-
-    ``numpy.meshgrid`` detector arrays normally vary in ``q_z`` along axis 1,
-    whereas the ILL NeXus files used in the experimental example vary in
-    ``q_z`` along axis 0.  The numerical fit uses the coordinate arrays
-    directly and is independent of this storage convention; only ``imshow``
-    needs the detector image in a fixed display orientation.
-    """
-    q_z_axis_0 = float(np.nanmedian(np.abs(np.diff(q_z, axis=0))))
-    q_z_axis_1 = float(np.nanmedian(np.abs(np.diff(q_z, axis=1))))
-    q_y_axis_0 = float(np.nanmedian(np.abs(np.diff(q_y, axis=0))))
-    q_y_axis_1 = float(np.nanmedian(np.abs(np.diff(q_y, axis=1))))
-
-    if q_z_axis_0 > q_z_axis_1 and q_y_axis_1 > q_y_axis_0:
-        oriented = image.T
-        q_z_line = q_z[:, q_z.shape[1] // 2]
-        q_y_line = q_y[q_y.shape[0] // 2, :]
-    else:
-        oriented = image
-        q_z_line = q_z[q_z.shape[0] // 2, :]
-        q_y_line = q_y[:, q_y.shape[1] // 2]
-
-    if np.nanmedian(np.diff(q_z_line)) < 0.0:
-        oriented = oriented[:, ::-1]
-    if np.nanmedian(np.diff(q_y_line)) < 0.0:
-        oriented = oriented[::-1, :]
-    return oriented
+    output_path: Path | None
 
 
 def standard_analyzer(
@@ -109,6 +75,7 @@ def standard_analyzer(
     pixel_integration_subpixels: int | None = None,
     pixel_integration_chunk_size: int = 512,
     block_test_confidence: float = 0.95,
+    export_figure: bool = True,
     output_path: str | Path = "standard_analysis.png",
 ) -> StandardAnalysisResult:
     """Fit the selected mode grid and save a multi-panel PNG summary.
@@ -141,16 +108,15 @@ def standard_analyzer(
     They are not highlighted in the standard overview. The even/odd power
     comparison remains descriptive; nominal T_n thresholds are model-based
     references rather than empirical artifact or physical-identification limits.
+    Set ``export_figure=False`` to skip all Matplotlib rendering while retaining
+    the complete numerical result; ``result.output_path`` is then ``None``.
     """
-    import matplotlib.pyplot as plt
-
     q_min, q_max, indices, basis_label = _resolve_analysis_arguments(
         q_range=q_range,
         mode_limits=mode_limits,
         indices=indices,
         even_only=even_only,
     )
-    m_max = max(m for _, m in indices)
 
     q_z, q_y, intensity = np.broadcast_arrays(
         np.asarray(q_z, dtype=float),
@@ -335,328 +301,6 @@ def standard_analyzer(
         sample_weight_image = np.zeros(intensity.shape)
         sample_weight_image[selected] = effective_weight_array[selected]
 
-    figure = plt.figure(figsize=(16.0, 20.0), constrained_layout=True)
-    grid = figure.add_gridspec(5, 6)
-    map_axes = [
-        figure.add_subplot(grid[0, 0:2]),
-        figure.add_subplot(grid[0, 2:4]),
-        figure.add_subplot(grid[0, 4:6]),
-    ]
-    cosine_axis = figure.add_subplot(grid[1, 0:3])
-    sine_axis = figure.add_subplot(grid[1, 3:6])
-    cosine_test_axis = figure.add_subplot(grid[2, 0:3])
-    sine_test_axis = figure.add_subplot(
-        grid[2, 3:6], sharey=cosine_test_axis
-    )
-    cosine_map_axis = figure.add_subplot(grid[3, 0:3])
-    sine_map_axis = figure.add_subplot(grid[3, 3:6])
-    cosine_spectra_axis = figure.add_subplot(grid[4, 0:3])
-    sine_spectra_axis = figure.add_subplot(grid[4, 3:6])
-
-    common_min = float(np.nanmin(input_image))
-    common_max = float(np.nanmax(input_image))
-    intensity_norm = None
-    intensity_colorbar_label = "intensity"
-    if log_intensity_colorbar:
-        from matplotlib.colors import LogNorm
-
-        positive_intensity = np.concatenate(
-            [
-                input_image[np.isfinite(input_image) & (input_image > 0.0)],
-                fit_image[np.isfinite(fit_image) & (fit_image > 0.0)],
-            ]
-        )
-        if positive_intensity.size == 0:
-            raise ValueError(
-                "log_intensity_colorbar=True requires positive input or fit values"
-            )
-        log_minimum = float(np.min(positive_intensity))
-        log_maximum = float(np.max(positive_intensity))
-        if log_maximum <= log_minimum:
-            log_maximum = log_minimum * (1.0 + 1.0e-12)
-        intensity_norm = LogNorm(vmin=log_minimum, vmax=log_maximum)
-        intensity_colorbar_label = "intensity (log color scale)"
-    residual_limit = max(float(np.nanmax(np.abs(residual_image))), np.finfo(float).eps)
-
-    if intensity.ndim == 2:
-        extent = (
-            float(np.nanmin(q_z)),
-            float(np.nanmax(q_z)),
-            float(np.nanmin(q_y)),
-            float(np.nanmax(q_y)),
-        )
-        display_input = _orient_detector_image(q_z, q_y, input_image)
-        display_fit = _orient_detector_image(q_z, q_y, fit_image)
-        display_residual = _orient_detector_image(q_z, q_y, residual_image)
-        if intensity_norm is not None:
-            display_input = np.ma.masked_less_equal(display_input, 0.0)
-            display_fit = np.ma.masked_less_equal(display_fit, 0.0)
-
-        input_plot = map_axes[0].imshow(
-            display_input,
-            origin="lower",
-            extent=extent,
-            vmin=None if intensity_norm is not None else common_min,
-            vmax=None if intensity_norm is not None else common_max,
-            norm=intensity_norm,
-            cmap="viridis",
-            interpolation="nearest",
-        )
-        map_axes[1].imshow(
-            display_fit,
-            origin="lower",
-            extent=extent,
-            vmin=None if intensity_norm is not None else common_min,
-            vmax=None if intensity_norm is not None else common_max,
-            norm=intensity_norm,
-            cmap="viridis",
-            interpolation="nearest",
-        )
-        residual_plot = map_axes[2].imshow(
-            display_residual,
-            origin="lower",
-            extent=extent,
-            vmin=-residual_limit,
-            vmax=residual_limit,
-            cmap="coolwarm",
-            interpolation="nearest",
-        )
-    else:
-        scatter_input = input_image[selected]
-        scatter_fit = fit_image[selected]
-        if intensity_norm is not None:
-            scatter_input = np.ma.masked_less_equal(scatter_input, 0.0)
-            scatter_fit = np.ma.masked_less_equal(scatter_fit, 0.0)
-        input_plot = map_axes[0].scatter(
-            q_z[selected],
-            q_y[selected],
-            c=scatter_input,
-            s=5,
-            linewidths=0,
-            vmin=None if intensity_norm is not None else common_min,
-            vmax=None if intensity_norm is not None else common_max,
-            norm=intensity_norm,
-            cmap="viridis",
-        )
-        map_axes[1].scatter(
-            q_z[selected],
-            q_y[selected],
-            c=scatter_fit,
-            s=5,
-            linewidths=0,
-            vmin=None if intensity_norm is not None else common_min,
-            vmax=None if intensity_norm is not None else common_max,
-            norm=intensity_norm,
-            cmap="viridis",
-        )
-        residual_plot = map_axes[2].scatter(
-            q_z[selected],
-            q_y[selected],
-            c=residual_image[selected],
-            s=5,
-            linewidths=0,
-            vmin=-residual_limit,
-            vmax=residual_limit,
-            cmap="coolwarm",
-        )
-
-    for axis, title in zip(map_axes, ["input signal", "mode fit", "residual"]):
-        axis.set_title(title)
-        axis.set_xlabel(r"$q_z$")
-        axis.set_aspect("equal")
-        axis.set_xlim(
-            max(float(np.nanmin(q_z)), -q_max),
-            min(float(np.nanmax(q_z)), q_max),
-        )
-        axis.set_ylim(
-            max(float(np.nanmin(q_y)), -q_max),
-            min(float(np.nanmax(q_y)), q_max),
-        )
-    map_axes[0].set_ylabel(r"$q_y$")
-    figure.colorbar(
-        input_plot,
-        ax=map_axes[:2],
-        label=intensity_colorbar_label,
-    )
-    figure.colorbar(residual_plot, ax=map_axes[2], label="residual")
-
-    power_scale = float(max(np.max(powers.cosine), np.max(powers.sine)))
-    cosine_fraction = powers.cosine / power_scale
-    sine_fraction = powers.sine / power_scale
-    assert powers.cosine_uncertainty is not None
-    assert powers.sine_uncertainty is not None
-    cosine_uncertainty = powers.cosine_uncertainty / power_scale
-    sine_uncertainty = powers.sine_uncertainty / power_scale
-
-    positive = np.concatenate(
-        [cosine_fraction[cosine_fraction > 0.0], sine_fraction[sine_fraction > 0.0]]
-    )
-    lower_limit = max(float(np.min(positive)) / 3.0, 1.0e-14)
-    upper_limit = max(
-        float(np.max(cosine_fraction + cosine_uncertainty)),
-        float(np.max(sine_fraction + sine_uncertainty)),
-    ) * 1.5
-
-    cosine_lower_error = np.minimum(
-        cosine_uncertainty, np.maximum(cosine_fraction - lower_limit, 0.0)
-    )
-    sine_lower_error = np.minimum(
-        sine_uncertainty, np.maximum(sine_fraction - lower_limit, 0.0)
-    )
-    angular_orders = np.asarray(
-        sorted({abs(n) for n, _ in fit.indices}), dtype=np.int64
-    )
-    cosine_orders = np.asarray(
-        sorted({n for n, _ in fit.indices if n >= 0}), dtype=np.int64
-    )
-    sine_orders = np.asarray(
-        sorted({abs(n) for n, _ in fit.indices if n < 0}), dtype=np.int64
-    )
-    for axis, orders, fraction, lower_error, power_uncertainty, even_color, title in [
-        (
-            cosine_axis, cosine_orders, cosine_fraction, cosine_lower_error,
-            cosine_uncertainty, "tab:blue", "cosine angular powers",
-        ),
-        (
-            sine_axis, sine_orders, sine_fraction, sine_lower_error,
-            sine_uncertainty, "tab:orange", "sine angular powers",
-        ),
-    ]:
-        even = orders % 2 == 0
-        for plotted_orders, color, label in [
-            (orders[even], even_color, "even orders"),
-            (orders[~even], "0.75", "odd orders"),
-        ]:
-            if plotted_orders.size == 0:
-                continue
-            axis.errorbar(
-                plotted_orders,
-                fraction[plotted_orders],
-                yerr=np.vstack(
-                    [lower_error[plotted_orders], power_uncertainty[plotted_orders]]
-                ),
-                fmt="o",
-                color=color,
-                markeredgecolor="0.55" if label == "odd orders" else color,
-                capsize=3,
-                label=label,
-            )
-        axis.set_title(title)
-        axis.set_xlabel("angular order n")
-        axis.set_ylabel(r"relative power $P_n^2/P_{\max}^2$")
-        axis.set_xticks(orders)
-        axis.set_yscale("log")
-        axis.set_ylim(lower_limit, upper_limit)
-        axis.grid(axis="y", alpha=0.25)
-        if orders.size:
-            axis.legend(fontsize=8)
-
-    for axis, orders, statistic, critical, valid, even_color, title in [
-        (
-            cosine_test_axis,
-            cosine_orders,
-            block_tests.cosine_statistic,
-            block_tests.cosine_critical_value,
-            block_tests.cosine_degrees_of_freedom > 0,
-            "tab:blue",
-            "cosine angular block tests",
-        ),
-        (
-            sine_test_axis,
-            sine_orders,
-            block_tests.sine_statistic,
-            block_tests.sine_critical_value,
-            block_tests.sine_degrees_of_freedom > 0,
-            "tab:orange",
-            "sine angular block tests",
-        ),
-    ]:
-        even = valid & (block_tests.orders % 2 == 0)
-        if np.any(even):
-            axis.plot(
-                block_tests.orders[even],
-                statistic[even],
-                "o",
-                color=even_color,
-                label="even orders",
-            )
-        odd = valid & (block_tests.orders % 2 == 1)
-        if np.any(odd):
-            axis.plot(
-                block_tests.orders[odd],
-                statistic[odd],
-                "o",
-                color="0.75",
-                markeredgecolor="0.55",
-                label="odd orders",
-            )
-        axis.plot(
-            block_tests.orders[valid],
-            critical[valid],
-            "--",
-            color="tab:red",
-            label=f"nominal {block_test_confidence:.0%} threshold",
-        )
-        axis.set_title(title)
-        axis.set_xlabel("angular order n")
-        axis.set_ylabel(r"$T_n$")
-        axis.set_xticks(orders)
-        axis.set_yscale("log")
-        axis.grid(axis="y", alpha=0.25)
-        if np.any(valid):
-            axis.legend(fontsize=8)
-
-    max_fitted_order = angular_orders[-1]
-    cosine_map = np.zeros((m_max + 1, max_fitted_order + 1))
-    sine_map = np.zeros_like(cosine_map)
-    mode_power_scale = float(np.max(fit.coefficients**2))
-    for coefficient, (n, m) in zip(fit.coefficients, fit.indices):
-        if n >= 0:
-            cosine_map[m, n] = coefficient**2 / mode_power_scale
-        else:
-            sine_map[m, abs(n)] = coefficient**2 / mode_power_scale
-
-    from matplotlib.colors import LogNorm
-
-    positive_map = np.concatenate(
-        [cosine_map[cosine_map > 0.0], sine_map[sine_map > 0.0]]
-    )
-    map_norm = LogNorm(
-        vmin=max(float(np.min(positive_map)) / 2.0, 1.0e-14),
-        vmax=1.0,
-    )
-    cosine_map_plot = cosine_map_axis.imshow(
-        np.ma.masked_less_equal(cosine_map, 0.0),
-        origin="lower",
-        aspect="auto",
-        extent=(-0.5, max_fitted_order + 0.5, -0.5, m_max + 0.5),
-        norm=map_norm,
-        cmap="viridis",
-    )
-    if sine_orders.size:
-        sine_map_axis.imshow(
-            np.ma.masked_less_equal(sine_map[:, 1:], 0.0),
-            origin="lower",
-            aspect="auto",
-            extent=(0.5, max_fitted_order + 0.5, -0.5, m_max + 0.5),
-            norm=map_norm,
-            cmap="viridis",
-        )
-    for axis, orders, title in [
-        (cosine_map_axis, cosine_orders, "cosine $(n,m)$ powers"),
-        (sine_map_axis, sine_orders, "sine $(n,m)$ powers"),
-    ]:
-        axis.set_title(title)
-        axis.set_xlabel("angular order n")
-        axis.set_ylabel("radial order m")
-        axis.set_xticks(orders)
-        axis.set_yticks(range(m_max + 1))
-    figure.colorbar(
-        cosine_map_plot,
-        ax=[cosine_map_axis, sine_map_axis],
-        label=r"relative mode power $c_{n,m}^2/c_{\max}^2$",
-    )
-
     q_spectrum = np.linspace(q_min, q_max, 300)
     spectra = angular_radial_spectra(
         q_spectrum,
@@ -666,82 +310,8 @@ def standard_analyzer(
         q_max=q_max,
         coefficient_covariance=fit.coefficient_covariance,
     )
-    assert spectra.cosine_uncertainty is not None
-    assert spectra.sine_uncertainty is not None
-    colors = plt.get_cmap("tab10")
-    for order in cosine_orders:
-        color = colors(int(order) % 10)
-        cosine_spectra_axis.plot(
-            spectra.q,
-            spectra.cosine[order],
-            label=f"n={order}",
-            color=color,
-        )
-        cosine_spectra_axis.fill_between(
-            spectra.q,
-            spectra.cosine[order] - spectra.cosine_uncertainty[order],
-            spectra.cosine[order] + spectra.cosine_uncertainty[order],
-            color=color,
-            alpha=0.18,
-            linewidth=0.0,
-        )
-    for order in sine_orders:
-        color = colors(int(order) % 10)
-        sine_spectra_axis.plot(
-            spectra.q,
-            spectra.sine[order],
-            label=f"n={order}",
-            color=color,
-        )
-        sine_spectra_axis.fill_between(
-            spectra.q,
-            spectra.sine[order] - spectra.sine_uncertainty[order],
-            spectra.sine[order] + spectra.sine_uncertainty[order],
-            color=color,
-            alpha=0.18,
-            linewidth=0.0,
-        )
-    for axis, title in zip(
-        [cosine_spectra_axis, sine_spectra_axis],
-        [r"cosine radial spectra $I_n^c(q)$", r"sine radial spectra $I_n^s(q)$"],
-    ):
-        axis.set_title(title)
-        axis.set_xlabel("q")
-        axis.set_ylabel(r"$I_n(q)$")
-        axis.set_xlim(q_min, q_max)
-        axis.axhline(0.0, color="black", linewidth=0.7)
-        axis.grid(alpha=0.25)
-        if axis is cosine_spectra_axis or sine_orders.size:
-            axis.legend(ncol=3, fontsize=7)
-
-    angular_mode_count = len({n for n, _ in fit.indices})
-    centering_summary = ""
-    if beam_centering_method is not None:
-        centering_summary = (
-            "\nbeam centre: "
-            + beam_centering_method
-            + f"   delta q=({center_shift_q_z:.3e}, {center_shift_q_y:.3e})"
-        )
-    figure.suptitle(
-        "Mode analysis "
-        f"({basis_label}: {len(fit.indices)} total, "
-        f"{angular_mode_count} angular modes)\n"
-        + f"even power fraction: {parity_fractions.even:.6f}   "
-        + f"odd power fraction: {parity_fractions.odd:.6f}"
-        + "\n"
-        + r"fit parity $\langle[I(q,\theta)-I(q,\theta+\pi)]^2\rangle_A$: "
-        + f"{parity_mismatch.mean_square:.3e}   "
-        + f"relative RMS: {parity_mismatch.normalized_rms:.4f}"
-        + centering_summary,
-        fontsize=12,
-    )
-
-    path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(path, dpi=150)
-    plt.close(figure)
-
-    return StandardAnalysisResult(
+    path = Path(output_path) if export_figure else None
+    result = StandardAnalysisResult(
         fit=fit,
         powers=powers,
         spectra=spectra,
@@ -760,6 +330,20 @@ def standard_analyzer(
         center_shift_q_y=center_shift_q_y,
         output_path=path,
     )
+    if export_figure:
+        from .figure_backend import export_standard_analysis_figure
+
+        export_standard_analysis_figure(
+            result,
+            q_z,
+            q_y,
+            q_range=(q_min, q_max),
+            basis_label=basis_label,
+            block_test_confidence=block_test_confidence,
+            log_intensity_colorbar=log_intensity_colorbar,
+            output_path=path,
+        )
+    return result
 
 
 def _resolve_analysis_arguments(

@@ -182,6 +182,27 @@ The returned object contains the numerical linear fit, reconstructed and
 residual data, selection mask, effective weights, angular powers, block tests,
 and radial spectra.
 
+Figure rendering is isolated in
+[`src/sans2d_mode_analyzer/figure_backend.py`](src/sans2d_mode_analyzer/figure_backend.py).
+By default `standard_analyzer` calls this backend and writes the requested PNG.
+For numerical sweeps or scripted postprocessing, disable rendering without
+changing any numerical calculation:
+
+```python
+result = standard_analyzer(
+    q_z,
+    q_y,
+    intensity,
+    q_range=(q_min, q_max),
+    indices=indices,
+    export_figure=False,
+)
+```
+
+In this case `result.output_path` is `None`; the fit, powers, block tests,
+detector-space arrays, parity diagnostics, and radial spectra remain available.
+Matplotlib is imported only when figure export is enabled.
+
 Set `beam_centering=True` to run parity-based centering immediately before the
 standard fit. The analyzer dispatches from the input shape: a one-dimensional
 detector point list uses `center_point_cloud_by_parity(...)`, while a

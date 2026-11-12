@@ -56,6 +56,26 @@ def test_standard_analyzer_fits_and_writes_summary(tmp_path):
     )
 
 
+def test_standard_analyzer_can_skip_figure_export(tmp_path):
+    q_z = np.array([0.2, -0.2, 0.3, -0.3])
+    q_y = np.array([0.1, -0.1, -0.1, 0.1])
+    output = tmp_path / "not-created.png"
+    result = standard_analyzer(
+        q_z,
+        q_y,
+        np.ones(4),
+        q_range=(0.1, 0.5),
+        mode_limits=(0, 0),
+        export_figure=False,
+        output_path=output,
+    )
+
+    assert result.output_path is None
+    assert not output.exists()
+    assert result.spectra.q.shape == (300,)
+    assert result.fit_image.shape == q_z.shape
+
+
 def test_standard_analyzer_accepts_explicit_sparse_indices(monkeypatch, tmp_path):
     from matplotlib.figure import Figure
 
