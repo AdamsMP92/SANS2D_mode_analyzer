@@ -18,13 +18,27 @@ q_range = (x_min / radius, x_max / radius)
 q_min, q_max = q_range
 q_z, q_y, noisy_image = powder_average_affine_noise_signal(q_min, q_max, radius)
 
-# Standard mode analyzer.
-mode_limits = (15, 15)
+# Standard mode analyzer full fit.
+mode_limits = (25, 25)
 analysis = standard_analyzer(
     q_z,
     q_y,
     noisy_image,
     q_range=q_range,
     mode_limits=mode_limits,
-    output_path=output_directory / "synthetic_sphere_fit.png",
+    even_only=False,
+    output_path=output_directory / "synthetic_sphere_fit1.png",
+)
+
+
+# Standard mode analyzer even only fit.
+mode_limits = (25, 25)
+analysis = standard_analyzer(
+    q_z,
+    q_y,
+    noisy_image,
+    q_range=q_range,
+    mode_limits=mode_limits,
+    even_only=True,
+    output_path=output_directory / "synthetic_sphere_fit2.png",
 )

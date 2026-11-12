@@ -41,8 +41,8 @@ This document describes the analysis implemented in
 \texttt{sans2d-mode-analyzer} (version 0.1.0). A real-valued detector pattern
 on a circular annulus is represented by orthonormal radial Legendre modes
 and real angular Fourier modes. We specify the linear fit, its covariance,
-the associated Parseval powers and angular block statistics, and the radial
-coefficient spectra. We also describe detector selection, optional pixel
+the associated Parseval powers, angular block statistics and optional numerical
+Holm diagnostics, and the radial coefficient spectra. We also describe detector selection, optional pixel
 integration and parity-based centering, symmetry diagnostics, reduced
 reconstructions, truncation checks, and angular-template projections.
 All quantities refer to the chosen annulus and finite fitted expansion.
@@ -137,12 +137,13 @@ and fitted intensity are
  \label{eq:expansion}
 \end{equation}
 with $\langle\Phi_{nm},\Phi_{n'm'}\rangle_{\Ann}
-=\delta_{nn'}\delta_{mm'}$. The standard analyzer uses the full rectangle
-$|n|\leq n_{\max}$ and $0\leq m\leq m_{\max}$, containing
-$K=(2n_{\max}+1)(m_{\max}+1)$ product modes. The lower-level fitting
-functions accept any explicitly selected set $\Modes$, including a set
-restricted to even angular orders. Omitted coefficients are understood as
-zero in subsequent sums.
+=\delta_{nn'}\delta_{mm'}$. By default, the standard analyzer uses the full
+rectangle $|n|\leq n_{\max}$ and $0\leq m\leq m_{\max}$, containing
+$K=(2n_{\max}+1)(m_{\max}+1)$ product modes. With \texttt{even\_only=True},
+the fit uses the subset with even $|n|$ at every radial order, so that
+$\widehat I(q,\theta+\pi)=\widehat I(q,\theta)$. The lower-level fitting
+functions accept any explicitly selected set $\Modes$. Omitted coefficients
+are understood as zero in subsequent sums.
 
 For a continuous, unweighted orthogonal projection of a square-integrable
 function, the coefficients would be
@@ -191,34 +192,61 @@ The weighted sum of squares is $Q(\widehat{\bm c})$; the field
 \texttt{reduced\_chi\_square} equals $Q/\nu$. The latter has a conventional
 reduced-$\chi^2$ interpretation only under the corresponding noise model.
 
-For $\nu>0$, the implemented coefficient covariance is
+Let $L=(X^{\trans}WX)^{-1}X^{\trans}W$ denote the linear map from
+observations to coefficients. With absolute uncertainties, the supplied
+$\sigma_p$ are the actual standard deviations of independent pixel
+measurements, so $\Sigma_{\mathrm{abs}}=\operatorname{diag}(\sigma_p^2)$.
+Additional sample weights change the fitting metric, not these measurement
+variances. For $\nu>0$, the implemented coefficient covariance is
 \begin{equation}
- C=\gamma(X^{\trans}WX)^{-1},\qquad
- \gamma=\begin{cases}
- 1,&\text{supplied absolute uncertainties},\\
- Q(\widehat{\bm c})/\nu,&\text{residual-estimated common variance scale}.
+ C=\begin{cases}
+ L\Sigma_{\mathrm{abs}}L^{\trans},
+   &\text{absolute pixel uncertainties},\\
+ \gamma(X^{\trans}WX)^{-1},
+   &\text{relative precision model},
  \end{cases}
+ \qquad \gamma=Q(\widehat{\bm c})/\nu.
  \label{eq:covariance}
 \end{equation}
-The first case is the default when experimental uncertainties are supplied;
-relative uncertainties can explicitly request residual scaling. Fits
-without supplied uncertainties use the second case. The implementation
-returns an undefined covariance when $\nu\leq0$.
-
-Equation~\eqref{eq:covariance} is the working covariance used throughout
-the package. Its statistical interpretation assumes the selected linear
-model and a noise covariance proportional to $W^{-1}$. In particular,
-fractional area weights are geometric weights and need not represent
-additional statistical precision. If the actual sample covariance is
-$\Sigma$, the sampling covariance for a fixed design would instead be
+The first case is the default when experimental uncertainties are supplied
+and implements the diagonal-noise specialization of the general
+fixed-design sampling covariance
 \begin{equation}
  C_{\mathrm{sampling}}=(X^{\trans}WX)^{-1}
  X^{\trans}W\Sigma WX(X^{\trans}WX)^{-1}.
  \label{eq:sandwich}
 \end{equation}
-This general covariance is not evaluated by the current implementation.
-The returned errors and significance thresholds are therefore conditional
-on the working model; they do not include uncertainty in the fitted center,
+For $w_p=1$ and $\Sigma=\Sigma_{\mathrm{abs}}$, it reduces to the usual
+inverse normal matrix. For fractional area weights it generally does not:
+the middle factor contains $w_p^2/\sigma_p^2$, rather than
+$w_p/\sigma_p^2$. Multiplying all geometric weights by a common positive
+constant leaves both the coefficient estimates and this absolute covariance
+unchanged. Statistical precision factors must be incorporated in the
+supplied $\sigma_p$ themselves.
+
+The covariance is evaluated using a reduced QR factorization
+$W^{1/2}X=UR$, without forming an inverse normal matrix or an $N\times N$
+observation matrix. In the absolute case,
+\begin{equation*}
+ L\Sigma_{\mathrm{abs}}^{1/2}
+ =R^{-1}U^{\trans}\operatorname{diag}(\sqrt{w_p}),
+ \qquad C=(L\Sigma_{\mathrm{abs}}^{1/2})
+           (L\Sigma_{\mathrm{abs}}^{1/2})^{\trans}.
+\end{equation*}
+The relative case uses triangular solves for
+$\gamma R^{-1}R^{-\trans}$.
+
+Relative uncertainties can explicitly request residual scaling; fits
+without supplied uncertainties also use this second case. It retains the
+working model $\Sigma=\gamma W^{-1}$, in which the combined fit weights
+represent relative statistical precision. It does not calibrate geometric
+coverage weights with otherwise unspecified pixel-noise variance. Merely
+rescaling residuals does not supply the missing noise model. The
+implementation returns an undefined covariance when $\nu\leq0$.
+
+Returned errors and significance thresholds are conditional on the
+selected noise and linear-signal model. General non-diagonal sample
+covariances are not accepted; the errors do not include uncertainty in the fitted center,
 mode selection, or reduction-induced correlations. For deterministic
 simulation data, residual-scaled errors describe finite-expansion
 discrepancies under that model, rather than experimental counting noise.
@@ -390,11 +418,14 @@ ratios cannot in general replace Eq.~\eqref{eq:block-statistic}. The
 quantities $T_n^b$ are dimensionless test statistics, not expansion
 coefficients or Parseval powers.
 
-With independent Gaussian errors of known absolute scale and the correct
-precision matrix, the null reference distribution is $\chi^2_{r_n^b}$.
-When the common variance scale is estimated from the same fit residuals,
-the reference is $T_n^b/r_n^b\sim F_{r_n^b,\nu}$ under the corresponding
-Gaussian model. Thus the plotted critical value at confidence $\beta$ is
+With independent Gaussian errors of known absolute scale and the propagated
+sampling covariance in Eq.~\eqref{eq:covariance}, the null reference
+distribution is $\chi^2_{r_n^b}$, including for additional geometric fit
+weights. When the common variance scale is estimated from the same fit
+residuals, the reference is $T_n^b/r_n^b\sim F_{r_n^b,\nu}$ under the
+relative precision model $\Sigma=\gamma W^{-1}$. This F reference is not
+calibrated for arbitrary geometric weights with a different noise model.
+Thus the plotted critical value at confidence $\beta$ is
 \begin{equation}
  T_{n,\mathrm{crit}}^b=
  \begin{cases}
@@ -411,17 +442,64 @@ not divided by $r_n^b$. The standard analyzer selects this case when
 \texttt{covariance\_scaled\_by\_residual} is true and passes the fit's
 residual degrees of freedom to the block-test function.
 Missing blocks have rank zero and undefined statistics, including the
-nonexistent zero-order sine block. A rejection concerns the specified
-block conditional on the other included modes. The implementation applies
-no correction for testing several blocks, and a small amplitude can have
-a large $T_n^b$ if it is precisely determined. The working-model
-qualification following Eq.~\eqref{eq:covariance} applies to these tests.
+nonexistent zero-order sine block. A nominal rejection concerns the specified
+block conditional on the other included modes, without correcting for the
+other blocks tested. A small amplitude can have a large $T_n^b$ if it is
+precisely determined. The noise-model qualifications following
+Eq.~\eqref{eq:covariance} apply to these tests.
 
 For nearly singular blocks the statistic tests only the covariance
 directions retained by the common cutoff. The same numerical rank
 determines the reference distributions and thresholds above. An existing
 block with zero numerical rank has a zero stored statistic and undefined
 upper-tail probability and critical value; it provides no calibrated test.
+
+The block-test result additionally provides an optional numerical Holm
+step-down correction for one joint family $\mathcal H$ containing all positive-rank cosine and sine
+blocks for this map, fixed annulus, and selected basis. The family size is
+$N_{\mathrm{test}}=|\mathcal H|$; missing and rank-zero blocks are excluded.
+For the full rectangle with $n_{\max}=25$ and positive block ranks,
+$N_{\mathrm{test}}=51$, independent of the radial truncation. Both branches
+are corrected together, including the isotropic block, rather than defining
+a separate family for each panel.
+
+Let $p_{(1)}\leq\cdots\leq p_{(N_{\mathrm{test}})}$ denote the ordered
+uncorrected upper-tail probabilities. The adjusted probabilities, mapped
+back to their original blocks after sorting, are
+\begin{equation}
+ \widetilde p_{(j)}
+ =\min\!\left\{1,\ \max_{1\leq i\leq j}
+              \left[(N_{\mathrm{test}}-i+1)p_{(i)}\right]\right\},
+ \qquad j=1,\ldots,N_{\mathrm{test}}.
+ \label{eq:holm-pvalues}
+\end{equation}
+The rejection rule is $\widetilde p_n^b\leq\alpha$, where
+$\alpha=1-\beta=0.05$ by default. Unavailable probabilities in positive-rank
+blocks count conservatively as one in the adjustment and remain undefined
+without rejection in the output. Missing and rank-zero blocks are excluded.
+
+Provided the marginal probabilities are valid, Holm controls the
+probability of rejecting any true null in this family by $\alpha$ under
+arbitrary dependence. It does not repair an incorrect covariance model,
+account for data-dependent basis or annulus selection, or control a larger
+family spanning several maps or analysis runs. The $T_n^b$ statistics,
+numerical ranks, raw probabilities, and nominal critical values remain
+unchanged.
+
+These error probabilities concern zero-coefficient null hypotheses under
+the specified noise and signal model. They do not quantify the frequency
+of experimental artifacts or physical misidentifications. A centering or
+detector artifact can produce a genuinely nonzero fitted block and hence
+a small model-based p-value. Calibration simulations check the
+implementation for their generating models; they do not establish that
+those assumptions hold for the measured data.
+
+The standard overview does not highlight Holm decisions. Its dashed
+$T_n^b$ curves retain the explicitly nominal, model-based thresholds of
+Eq.~\eqref{eq:block-threshold}. The numerical Holm properties remain
+available separately; they do not determine a physical identification
+criterion, modify the modal powers and spectra, or select and refit a
+reduced model.
 
 \subsection{Parity, mirror symmetry, and signal centering}
 
@@ -451,9 +529,19 @@ provided $\mathcal{P}>0$. For the fitted expansion, Parseval gives
 \end{align}
 The first measure has intensity-squared units; the second is a scale-free
 relative RMS mismatch and contains the same information as $f_{\mathrm{odd}}$.
-These are diagnostics of the fitted function. Mirror symmetry about the
-$q_z$ axis is $\theta\mapsto-\theta$ and forbids all sine coefficients;
+These are diagnostics of the fitted function. With \texttt{even\_only=True},
+the odd power and parity mismatch vanish by construction. Mirror symmetry
+about the $q_z$ axis is $\theta\mapsto-\theta$ and forbids all sine coefficients;
 it is an additional assumption independent of parity.
+
+For an observable expected to be parity even, a broad background of odd
+angular powers can serve as an empirical reference for measurement noise,
+asymmetries, and processing artifacts. With the same annulus and power
+normalization, an even power at or below that level is not clearly
+resolved above this empirical background. This is a descriptive robustness
+criterion, not a calibrated probability threshold: mode variances, radial
+profiles, and sensitivities can differ. Physical odd contributions must
+first be excluded before interpreting odd powers as a background.
 
 For a cross section known to be parity even, an incorrect origin can create
 odd harmonics. The optional centering step estimates a common displacement
@@ -538,6 +626,9 @@ Pixel averaging refers to the portion inside the analysis annulus; the
 observed pixel intensity itself is not subdivided. This is an approximation
 for boundary pixels that represent full-pixel averages. Pixel integration
 also does not model wavelength spread or instrumental $q$ resolution.
+With absolute errors, the supplied pixel variances remain unchanged by
+coverage; Eq.~\eqref{eq:covariance} propagates them using the integrated
+design and the effective fit weights.
 For a point list without supplied pixel geometry, these helpers reduce to
 binary annulus selection and point evaluation. The integrated design is
 assembled in chunks to bound temporary storage.
@@ -606,11 +697,12 @@ the shortest descending-power list $\Modes_\eta$ satisfying
 The retained coefficients are taken from the full fit without refitting.
 This gives a norm-controlled compression of that fitted function, not an
 independent test against the measured data. The standard overview reports
-mode counts at $\eta=0.95,0.98,0.99$ and displays a reduced reconstruction
-with a configurable default $\eta=0.95$. Positive and negative signed
-indices count as distinct angular modes. The reduced spectra and their
-covariance blocks retain only the selected coefficients; their error bands
-condition on the selected subset.
+mode counts at $\eta=0.95,0.98,0.99$. Positive and negative signed indices
+count as distinct angular modes. The numerical result includes the reduced
+reconstruction and its radial spectra at a configurable threshold with
+default $\eta=0.95$. The reduced spectra and their covariance blocks retain
+only the selected coefficients. Their propagated uncertainties condition
+on the selected subset.
 
 The optional \texttt{mode\_convergence\_standard\_analyzer} checks
 rectangular truncations against the largest tested rectangle, denoted by
@@ -687,9 +779,9 @@ The definitions above correspond to \texttt{basis.py} and \texttt{indices.py}
 under \texttt{src/sans2d\_mode\_analyzer/}. Explicit detector operations
 reside in \texttt{preconditioning.py}, the truncation sweep in
 \texttt{convergence.py}, and template projections in \texttt{mode\_tests.py}.
-The \texttt{standard\_analyzer} combines sample selection, the rectangular
-fit, and its diagnostic overview; the numerical results and spectra are
-also returned directly.
+The \texttt{standard\_analyzer} combines sample selection, fitting over the
+selected modes, and the diagnostic overview. The numerical results and
+spectra are also returned directly.
 
 The ILL NeXus loader maps the stored \texttt{qx1} direction to $q_z$,
 \texttt{qy1} to $q_y$, and converts the stored inverse-angstrom coordinates
@@ -699,7 +791,8 @@ nanoflower data, the local data documentation identifies the 10 and
 contain the $+-$ channel alone. Their common baseline analysis uses
 $0.015\leq q\leq0.100\,\mathrm{nm}^{-1}$, the supplied uncertainties,
 $n_{\max}=m_{\max}=25$, $7\times7$ subpixel coverage weights, and no
-parity centering or folding.
+parity centering or folding. Their supplied pixel errors are treated as
+absolute, with covariance propagated through the coverage-weighted fit.
 The ASCII loader reads columns $(q_z,q_y,I,\sigma)$ without converting
 units; the legacy nanoporous-Fe benchmark has an unresolved coordinate-unit
 caveat in its data README. Its numerical $q$ interval must therefore not
@@ -707,8 +800,9 @@ be assigned physical units without establishing that provenance.
 
 A reproducible analysis specifies the input channel and reduction,
 coordinate units and angular origin, annulus, retained mode set, weights
-and covariance scaling, any centering or symmetry operations, and the
-truncation and compression settings. The modal description then provides
+and covariance scaling, any centering or symmetry operations, the
+truncation and compression settings, and the test confidence and family.
+The modal description then provides
 a common representation for measured and simulated detector patterns,
 with physical interpretation tied to the observable and assumptions used.
 

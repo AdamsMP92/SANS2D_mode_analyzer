@@ -33,7 +33,7 @@ for filename in data_files:
         data.intensity,
         uncertainty=data.uncertainty,
         sample_weight=annulus_weight,
-        q_range=(0.015, 0.10),
+        q_range=(0.015, 0.1),
         mode_limits=(25, 25),
         output_path=output,
     )

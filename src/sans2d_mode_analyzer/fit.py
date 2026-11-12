@@ -20,6 +20,10 @@ class MSEFitResult:
     ``weighted_sum_squares`` and ``reduced_chi_square`` describe the metric
     actually minimized.  They therefore coincide with the ordinary residual
     sum of squares and its degree-of-freedom normalization for ``fit_mse``.
+    With absolute uncertainties, ``coefficient_covariance`` propagates the
+    supplied independent measurement errors through the fitted linear map.
+    With residual scaling it is conditional on noise proportional to the
+    inverse combined fit weights.
     """
 
     indices: tuple[ModeIndex, ...]
@@ -72,6 +76,7 @@ def fit_mse(
         q_min=q_min,
         q_max=q_max,
         whitening=None,
+        measurement_uncertainty=None,
         absolute_uncertainty=False,
         rcond=rcond,
     )
@@ -103,10 +108,16 @@ def fit_wls(
     sample weight.  Nonpositive uncertainties and weights are rejected rather
     than silently clipped.
 
-    With ``absolute_uncertainty=True`` the coefficient covariance is the
-    unscaled inverse weighted normal matrix.  Set it to false only when the
-    supplied uncertainties define relative weights and the residual scatter
-    should estimate their common scale.
+    With ``absolute_uncertainty=True``, ``uncertainty`` specifies the actual
+    independent measurement standard deviations. The covariance propagates
+    these errors through the weighted fit; additional ``sample_weight``
+    values change the fit metric, not the measurement variance. To express
+    statistical precision weights, include them in ``uncertainty`` itself.
+
+    With ``absolute_uncertainty=False`` the combined weights instead define
+    a relative precision model: Var(I_p) = scale * sigma_p**2 / w_p. The
+    residuals estimate that scale. This working model does not provide a
+    geometric-weight sampling covariance for unknown measurement noise.
     """
     q_array, theta_array, value_array, uncertainty_array = np.broadcast_arrays(
         np.asarray(q, dtype=float),
@@ -135,6 +146,7 @@ def fit_wls(
         q_min=q_min,
         q_max=q_max,
         whitening=whitening,
+        measurement_uncertainty=uncertainty_array,
         absolute_uncertainty=absolute_uncertainty,
         rcond=rcond,
     )
@@ -154,7 +166,10 @@ def fit_design_matrix(
 
     The matrix must have shape ``values.shape + (number_of_modes,)``.  This
     entry point allows detector-pixel integration to be performed separately
-    without changing the linear least-squares solver.
+    without changing the linear least-squares solver. Absolute uncertainties
+    are propagated as independent pixel errors, regardless of sample weights.
+    Without absolute uncertainties, the combined weights specify the same
+    residual-scaled relative precision model as :func:`fit_wls`.
     """
     modes = validate_indices(indices)
     value_array = np.asarray(values, dtype=float)
@@ -178,6 +193,11 @@ def fit_design_matrix(
         value_array.shape,
         modes,
         whitening.reshape(-1),
+        measurement_uncertainty=(
+            None if uncertainty is None else np.broadcast_to(
+                np.asarray(uncertainty, dtype=float), value_array.shape
+            ).reshape(-1)
+        ),
         absolute_uncertainty=fitted_with_absolute_errors,
         rcond=rcond,
     )
@@ -192,6 +212,7 @@ def _fit_linear(
     q_min: float,
     q_max: float,
     whitening: ArrayLike | None,
+    measurement_uncertainty: ArrayLike | None,
     absolute_uncertainty: bool,
     rcond: float | None,
 ) -> MSEFitResult:
@@ -223,6 +244,11 @@ def _fit_linear(
         value_array.shape,
         modes,
         whitening_flat,
+        measurement_uncertainty=(
+            None if measurement_uncertainty is None else np.broadcast_to(
+                np.asarray(measurement_uncertainty, dtype=float), value_array.shape
+            ).reshape(-1)
+        ),
         absolute_uncertainty=absolute_uncertainty,
         rcond=rcond,
     )
@@ -254,6 +280,7 @@ def _solve_design_matrix(
     modes,
     whitening_flat,
     *,
+    measurement_uncertainty,
     absolute_uncertainty,
     rcond,
 ):
@@ -273,10 +300,25 @@ def _solve_design_matrix(
     weighted_sum_squares = float(np.sum(weighted_residual**2))
     if degrees_of_freedom > 0:
         residual_variance = weighted_sum_squares / degrees_of_freedom
-        covariance_scale = 1.0 if absolute_uncertainty else residual_variance
-        coefficient_covariance = covariance_scale * np.linalg.inv(
-            weighted_matrix.T @ weighted_matrix
-        )
+        # QR avoids squaring the design's condition number in a normal-matrix
+        # inverse. No N-by-N observation covariance or hat matrix is formed.
+        if absolute_uncertainty:
+            orthogonal, triangular = np.linalg.qr(weighted_matrix, mode="reduced")
+            # For A = R^-1 Q.T sqrt(W), propagate diag(sigma**2):
+            # C = (A diag(sigma)) (A diag(sigma)).T. In particular, a
+            # fractional area weight does not change the supplied pixel noise.
+            noise_response = np.linalg.solve(
+                triangular,
+                orthogonal.T * (whitening_flat * measurement_uncertainty),
+            )
+            coefficient_covariance = noise_response @ noise_response.T
+        else:
+            # Legacy relative precision model, Var(y) = scale * W^-1.
+            triangular = np.linalg.qr(weighted_matrix, mode="r")
+            inverse_factor = np.linalg.solve(triangular, np.eye(len(modes)))
+            coefficient_covariance = residual_variance * (
+                inverse_factor @ inverse_factor.T
+            )
     else:
         residual_variance = float("nan")
         coefficient_covariance = np.full((len(modes), len(modes)), np.nan)

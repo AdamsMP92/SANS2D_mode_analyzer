@@ -9,6 +9,7 @@ build/
 *.egg-info/
 /examples/output/
 experimental_data/**/analysis_results/*.png
+experimental_data/**/analysis_results/covariance_comparison/*.png
 
 # LaTeX build products; retain .tex sources, bibliographies, and final PDFs.
 *.aux

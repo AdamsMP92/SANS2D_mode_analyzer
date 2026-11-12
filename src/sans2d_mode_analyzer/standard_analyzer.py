@@ -1,4 +1,4 @@
-"""Standard full-rectangular fit and compact PNG summary."""
+"""Standard mode fit and compact PNG summary."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from numpy.typing import ArrayLike, NDArray
 from .basis import evaluate_expansion
 from .block_test import AngularBlockTests, angular_block_tests
 from .fit import MSEFitResult, fit_design_matrix, fit_mse, fit_wls
-from .indices import ModeIndex, rectangular_indices
+from .indices import ModeIndex, even_angular_indices, rectangular_indices
 from .io import DetectorData
 from .power import (
     AngularModePowers,
@@ -106,6 +106,7 @@ def standard_analyzer(
     q_max: float | None = None,
     n_max: int | None = None,
     m_max: int | None = None,
+    even_only: bool = False,
     uncertainty: ArrayLike | None = None,
     sample_weight: ArrayLike | None = None,
     absolute_uncertainty: bool = True,
@@ -121,15 +122,21 @@ def standard_analyzer(
     block_test_confidence: float = 0.95,
     output_path: str | Path = "standard_analysis.png",
 ) -> StandardAnalysisResult:
-    """Fit a full rectangular mode grid and save a multi-panel PNG summary.
+    """Fit the selected mode grid and save a multi-panel PNG summary.
 
     ``q_range=(q_min, q_max)`` and ``mode_limits=(n_max, m_max)`` are the
     preferred high-level inputs; two-element lists are accepted as well. The
     four separate legacy keywords remain supported, but the two forms cannot
-    be mixed. Supplying ``uncertainty`` activates uncertainty-weighted least squares.
-    ``sample_weight`` can additionally contain fractional pixel coverage.  If
-    weights are supplied without uncertainties, they define relative weights
-    and the residual scatter sets the covariance scale.  Setting
+    be mixed. By default the fit uses the full rectangle. With
+    ``even_only=True``, only even angular orders are fitted for all radial
+    orders up to ``m_max``, enforcing antipodal symmetry in the fitted image.
+    Supplying ``uncertainty`` activates uncertainty-weighted least squares.
+    ``sample_weight`` can additionally contain fractional pixel coverage.
+    With absolute uncertainties, the supplied pixel errors are propagated
+    through this weighted fit; coverage does not alter their noise variance.
+    Without absolute uncertainties, the combined weights define a relative
+    precision model and the residual scatter sets its covariance scale. That
+    model does not calibrate geometric-weight noise of unknown variance. Setting
     ``pixel_integration_subpixels`` averages every basis function over the
     admitted subpixel area and automatically uses that fractional area as an
     additional sample weight. With ``beam_centering=True``, a one-dimensional
@@ -141,8 +148,13 @@ def standard_analyzer(
     masked but remain included in the numerical fit.
     ``reconstruction_threshold`` selects the smallest power-ranked subset
     carrying at least that fraction of the fitted modal Parseval power.  Its
-    two-dimensional reconstruction and radial spectra are shown in the final
-    plot row and returned with the numerical result.
+    two-dimensional reconstruction and radial spectra are returned with
+    the numerical result.
+    Holm-adjusted p-values and decisions remain available as numerical
+    properties of block_tests, conditional on the chosen noise model.
+    They are not highlighted in the standard overview. The even/odd power
+    comparison remains descriptive; nominal T_n thresholds are model-based
+    references rather than empirical artifact or physical-identification limits.
     """
     import matplotlib.pyplot as plt
 
@@ -223,7 +235,8 @@ def standard_analyzer(
 
     q = np.hypot(q_z, q_y)
     theta = np.arctan2(q_y, q_z)
-    indices = rectangular_indices(n_max=n_max, m_max=m_max)
+    select_indices = even_angular_indices if even_only else rectangular_indices
+    indices = select_indices(n_max=n_max, m_max=m_max)
     selected = (
         np.isfinite(q_z)
         & np.isfinite(q_y)
@@ -381,8 +394,8 @@ def standard_analyzer(
         sample_weight_image = np.zeros(intensity.shape)
         sample_weight_image[selected] = effective_weight_array[selected]
 
-    figure = plt.figure(figsize=(16.0, 24.0), constrained_layout=True)
-    grid = figure.add_gridspec(6, 6)
+    figure = plt.figure(figsize=(16.0, 20.0), constrained_layout=True)
+    grid = figure.add_gridspec(5, 6)
     map_axes = [
         figure.add_subplot(grid[0, 0:2]),
         figure.add_subplot(grid[0, 2:4]),
@@ -398,9 +411,6 @@ def standard_analyzer(
     sine_map_axis = figure.add_subplot(grid[3, 3:6])
     cosine_spectra_axis = figure.add_subplot(grid[4, 0:3])
     sine_spectra_axis = figure.add_subplot(grid[4, 3:6])
-    reconstruction_axis = figure.add_subplot(grid[5, 0:2])
-    reconstruction_cosine_axis = figure.add_subplot(grid[5, 2:4])
-    reconstruction_sine_axis = figure.add_subplot(grid[5, 4:6])
 
     common_min = float(np.nanmin(input_image))
     common_max = float(np.nanmax(input_image))
@@ -529,62 +539,6 @@ def standard_analyzer(
     )
     figure.colorbar(residual_plot, ax=map_axes[2], label="residual")
 
-    if intensity.ndim == 2:
-        display_reconstruction = _orient_detector_image(
-            q_z, q_y, reconstruction_image
-        )
-        if intensity_norm is not None:
-            display_reconstruction = np.ma.masked_less_equal(
-                display_reconstruction, 0.0
-            )
-        reconstruction_plot = reconstruction_axis.imshow(
-            display_reconstruction,
-            origin="lower",
-            extent=extent,
-            vmin=None if intensity_norm is not None else common_min,
-            vmax=None if intensity_norm is not None else common_max,
-            norm=intensity_norm,
-            cmap="viridis",
-            interpolation="nearest",
-        )
-    else:
-        scatter_reconstruction = reconstruction_image[selected]
-        if intensity_norm is not None:
-            scatter_reconstruction = np.ma.masked_less_equal(
-                scatter_reconstruction, 0.0
-            )
-        reconstruction_plot = reconstruction_axis.scatter(
-            q_z[selected],
-            q_y[selected],
-            c=scatter_reconstruction,
-            s=5,
-            linewidths=0,
-            vmin=None if intensity_norm is not None else common_min,
-            vmax=None if intensity_norm is not None else common_max,
-            norm=intensity_norm,
-            cmap="viridis",
-        )
-    reconstruction_axis.set_title(
-        f"{reconstruction_fraction:.0%} fitted-power reconstruction\n"
-        f"{len(reconstruction_indices)} modes"
-    )
-    reconstruction_axis.set_xlabel(r"$q_z$")
-    reconstruction_axis.set_ylabel(r"$q_y$")
-    reconstruction_axis.set_aspect("equal")
-    reconstruction_axis.set_xlim(
-        max(float(np.nanmin(q_z)), -q_max),
-        min(float(np.nanmax(q_z)), q_max),
-    )
-    reconstruction_axis.set_ylim(
-        max(float(np.nanmin(q_y)), -q_max),
-        min(float(np.nanmax(q_y)), q_max),
-    )
-    figure.colorbar(
-        reconstruction_plot,
-        ax=reconstruction_axis,
-        label=intensity_colorbar_label,
-    )
-
     power_scale = float(max(np.max(powers.cosine), np.max(powers.sine)))
     cosine_fraction = powers.cosine / power_scale
     sine_fraction = powers.sine / power_scale
@@ -608,56 +562,46 @@ def standard_analyzer(
     sine_lower_error = np.minimum(
         sine_uncertainty, np.maximum(sine_fraction - lower_limit, 0.0)
     )
-    cosine_even = powers.orders % 2 == 0
-    cosine_odd = ~cosine_even
-    sine_orders = powers.orders[1:]
-    sine_even = sine_orders % 2 == 0
-    sine_odd = ~sine_even
-
-    for mask, color, label in [
-        (cosine_even, "tab:blue", "even orders"),
-        (cosine_odd, "0.75", "odd orders"),
+    angular_orders = powers.orders[::2] if even_only else powers.orders
+    sine_orders = angular_orders[1:]
+    for axis, orders, fraction, lower_error, power_uncertainty, even_color, title in [
+        (
+            cosine_axis, angular_orders, cosine_fraction, cosine_lower_error,
+            cosine_uncertainty, "tab:blue", "cosine angular powers",
+        ),
+        (
+            sine_axis, sine_orders, sine_fraction, sine_lower_error,
+            sine_uncertainty, "tab:orange", "sine angular powers",
+        ),
     ]:
-        cosine_axis.errorbar(
-            powers.orders[mask],
-            cosine_fraction[mask],
-            yerr=np.vstack(
-                [cosine_lower_error[mask], cosine_uncertainty[mask]]
-            ),
-            fmt="o",
-            color=color,
-            markeredgecolor="0.55" if label == "odd orders" else color,
-            capsize=3,
-            label=label,
-        )
-    for mask, color, label in [
-        (sine_even, "tab:orange", "even orders"),
-        (sine_odd, "0.75", "odd orders"),
-    ]:
-        sine_axis.errorbar(
-            sine_orders[mask],
-            sine_fraction[1:][mask],
-            yerr=np.vstack(
-                [sine_lower_error[1:][mask], sine_uncertainty[1:][mask]]
-            ),
-            fmt="o",
-            color=color,
-            markeredgecolor="0.55" if label == "odd orders" else color,
-            capsize=3,
-            label=label,
-        )
-
-    for axis, title in zip(
-        [cosine_axis, sine_axis], ["cosine angular powers", "sine angular powers"]
-    ):
+        even = orders % 2 == 0
+        for plotted_orders, color, label in [
+            (orders[even], even_color, "even orders"),
+            (orders[~even], "0.75", "odd orders"),
+        ]:
+            if even_only and plotted_orders.size == 0:
+                continue
+            axis.errorbar(
+                plotted_orders,
+                fraction[plotted_orders],
+                yerr=np.vstack(
+                    [lower_error[plotted_orders], power_uncertainty[plotted_orders]]
+                ),
+                fmt="o",
+                color=color,
+                markeredgecolor="0.55" if label == "odd orders" else color,
+                capsize=3,
+                label=label,
+            )
         axis.set_title(title)
         axis.set_xlabel("angular order n")
         axis.set_ylabel(r"relative power $P_n^2/P_{\max}^2$")
-        axis.set_xticks(powers.orders)
+        axis.set_xticks(angular_orders)
         axis.set_yscale("log")
         axis.set_ylim(lower_limit, upper_limit)
         axis.grid(axis="y", alpha=0.25)
-        axis.legend(fontsize=8)
+        if orders.size or not even_only:
+            axis.legend(fontsize=8)
 
     for axis, statistic, critical, valid, even_color, title in [
         (
@@ -678,7 +622,6 @@ def standard_analyzer(
         ),
     ]:
         even = valid & (block_tests.orders % 2 == 0)
-        odd = valid & (block_tests.orders % 2 == 1)
         axis.plot(
             block_tests.orders[even],
             statistic[even],
@@ -686,31 +629,35 @@ def standard_analyzer(
             color=even_color,
             label="even orders",
         )
-        axis.plot(
-            block_tests.orders[odd],
-            statistic[odd],
-            "o",
-            color="0.75",
-            markeredgecolor="0.55",
-            label="odd orders",
-        )
+        if not even_only:
+            odd = valid & (block_tests.orders % 2 == 1)
+            axis.plot(
+                block_tests.orders[odd],
+                statistic[odd],
+                "o",
+                color="0.75",
+                markeredgecolor="0.55",
+                label="odd orders",
+            )
         axis.plot(
             block_tests.orders[valid],
             critical[valid],
             "--",
             color="tab:red",
-            label=f"{block_test_confidence:.0%} threshold",
+            label=f"nominal {block_test_confidence:.0%} threshold",
         )
         axis.set_title(title)
         axis.set_xlabel("angular order n")
         axis.set_ylabel(r"$T_n$")
-        axis.set_xticks(block_tests.orders)
+        axis.set_xticks(angular_orders)
         axis.set_yscale("log")
         axis.grid(axis="y", alpha=0.25)
-        axis.legend(fontsize=8)
+        if np.any(valid) or not even_only:
+            axis.legend(fontsize=8)
 
-    cosine_map = np.zeros((m_max + 1, n_max + 1))
-    sine_map = np.zeros((m_max + 1, n_max + 1))
+    max_fitted_order = angular_orders[-1]
+    cosine_map = np.zeros((m_max + 1, max_fitted_order + 1))
+    sine_map = np.zeros_like(cosine_map)
     mode_power_scale = float(np.max(fit.coefficients**2))
     for coefficient, (n, m) in zip(fit.coefficients, fit.indices):
         if n >= 0:
@@ -731,26 +678,27 @@ def standard_analyzer(
         np.ma.masked_less_equal(cosine_map, 0.0),
         origin="lower",
         aspect="auto",
-        extent=(-0.5, n_max + 0.5, -0.5, m_max + 0.5),
+        extent=(-0.5, max_fitted_order + 0.5, -0.5, m_max + 0.5),
         norm=map_norm,
         cmap="viridis",
     )
-    sine_map_axis.imshow(
-        np.ma.masked_less_equal(sine_map[:, 1:], 0.0),
-        origin="lower",
-        aspect="auto",
-        extent=(0.5, n_max + 0.5, -0.5, m_max + 0.5),
-        norm=map_norm,
-        cmap="viridis",
-    )
-    for axis, title in zip(
-        [cosine_map_axis, sine_map_axis],
-        ["cosine $(n,m)$ powers", "sine $(n,m)$ powers"],
-    ):
+    if sine_orders.size:
+        sine_map_axis.imshow(
+            np.ma.masked_less_equal(sine_map[:, 1:], 0.0),
+            origin="lower",
+            aspect="auto",
+            extent=(0.5, max_fitted_order + 0.5, -0.5, m_max + 0.5),
+            norm=map_norm,
+            cmap="viridis",
+        )
+    for axis, orders, title in [
+        (cosine_map_axis, angular_orders, "cosine $(n,m)$ powers"),
+        (sine_map_axis, sine_orders, "sine $(n,m)$ powers"),
+    ]:
         axis.set_title(title)
         axis.set_xlabel("angular order n")
         axis.set_ylabel("radial order m")
-        axis.set_xticks(range(0 if axis is cosine_map_axis else 1, n_max + 1))
+        axis.set_xticks(orders)
         axis.set_yticks(range(m_max + 1))
     figure.colorbar(
         cosine_map_plot,
@@ -770,7 +718,7 @@ def standard_analyzer(
     assert spectra.cosine_uncertainty is not None
     assert spectra.sine_uncertainty is not None
     colors = plt.get_cmap("tab10")
-    for order in spectra.orders:
+    for order in angular_orders:
         color = colors(int(order) % 10)
         cosine_spectra_axis.plot(
             spectra.q,
@@ -811,7 +759,8 @@ def standard_analyzer(
         axis.set_xlim(q_min, q_max)
         axis.axhline(0.0, color="black", linewidth=0.7)
         axis.grid(alpha=0.25)
-        axis.legend(ncol=3, fontsize=7)
+        if axis is cosine_spectra_axis or sine_orders.size:
+            axis.legend(ncol=3, fontsize=7)
 
     reconstruction_spectra = angular_radial_spectra(
         q_spectrum,
@@ -821,77 +770,6 @@ def standard_analyzer(
         q_max=q_max,
         coefficient_covariance=reconstruction_covariance,
     )
-    assert reconstruction_spectra.cosine_uncertainty is not None
-    assert reconstruction_spectra.sine_uncertainty is not None
-    reconstruction_cosine_orders = sorted(
-        {n for n, _ in reconstruction_indices if n >= 0}
-    )
-    reconstruction_sine_orders = sorted(
-        {abs(n) for n, _ in reconstruction_indices if n < 0}
-    )
-    for order in reconstruction_cosine_orders:
-        color = colors(int(order) % 10)
-        values = reconstruction_spectra.cosine[order]
-        uncertainty_values = reconstruction_spectra.cosine_uncertainty[order]
-        reconstruction_cosine_axis.plot(
-            reconstruction_spectra.q,
-            values,
-            label=f"n={order}",
-            color=color,
-        )
-        reconstruction_cosine_axis.fill_between(
-            reconstruction_spectra.q,
-            values - uncertainty_values,
-            values + uncertainty_values,
-            color=color,
-            alpha=0.18,
-            linewidth=0.0,
-        )
-    for order in reconstruction_sine_orders:
-        color = colors(int(order) % 10)
-        values = reconstruction_spectra.sine[order]
-        uncertainty_values = reconstruction_spectra.sine_uncertainty[order]
-        reconstruction_sine_axis.plot(
-            reconstruction_spectra.q,
-            values,
-            label=f"n={order}",
-            color=color,
-        )
-        reconstruction_sine_axis.fill_between(
-            reconstruction_spectra.q,
-            values - uncertainty_values,
-            values + uncertainty_values,
-            color=color,
-            alpha=0.18,
-            linewidth=0.0,
-        )
-    for axis, title in zip(
-        [reconstruction_cosine_axis, reconstruction_sine_axis],
-        [
-            rf"selected $I_n^c(q)$ ({reconstruction_fraction:.0%} power)",
-            rf"selected $I_n^s(q)$ ({reconstruction_fraction:.0%} power)",
-        ],
-    ):
-        axis.set_title(title)
-        axis.set_xlabel("q")
-        axis.set_ylabel(r"$I_n(q)$")
-        axis.set_xlim(q_min, q_max)
-        axis.axhline(0.0, color="black", linewidth=0.7)
-        axis.grid(alpha=0.25)
-    if reconstruction_cosine_orders:
-        reconstruction_cosine_axis.legend(ncol=2, fontsize=7)
-    else:
-        reconstruction_cosine_axis.text(
-            0.5, 0.5, "no cosine modes selected", ha="center", va="center",
-            transform=reconstruction_cosine_axis.transAxes,
-        )
-    if reconstruction_sine_orders:
-        reconstruction_sine_axis.legend(ncol=2, fontsize=7)
-    else:
-        reconstruction_sine_axis.text(
-            0.5, 0.5, "no sine modes selected", ha="center", va="center",
-            transform=reconstruction_sine_axis.transAxes,
-        )
 
     threshold_summary = "   ".join(
         f"[{threshold:.0%}: "
@@ -899,7 +777,8 @@ def standard_analyzer(
         f"{len({n for n, _ in selected_indices_by_threshold[threshold]})} angular]"
         for threshold in power_thresholds
     )
-    full_angular_mode_count = len({n for n, _ in fit.indices})
+    angular_mode_count = len({n for n, _ in fit.indices})
+    basis_label = "even only" if even_only else "full basis"
     centering_summary = ""
     if beam_centering_method is not None:
         centering_summary = (
@@ -909,8 +788,8 @@ def standard_analyzer(
         )
     figure.suptitle(
         "Power-ranked model reduction "
-        f"(full basis: {len(fit.indices)} total, "
-        f"{full_angular_mode_count} angular modes)\n"
+        f"({basis_label}: {len(fit.indices)} total, "
+        f"{angular_mode_count} angular modes)\n"
         + threshold_summary
         + "\n"
         + f"even power fraction: {parity_fractions.even:.6f}   "

@@ -115,23 +115,47 @@ residual of the finite mode truncation.
 
 `standard_analyzer(...)` accepts either two-dimensional detector arrays or
 one-dimensional detector point lists `q_z`, `q_y`, and `intensity`. It selects
-the requested `q_range=(q_min, q_max)`, creates the complete mode grid from
+the requested `q_range=(q_min, q_max)`, builds the mode grid from
 `mode_limits=(n_max, m_max)`, performs the fit, and writes the multi-panel
-summary PNG. The returned result exposes the plotted radial coefficient
+summary PNG. By default it fits the full rectangle (`even_only=False`).
+Set `even_only=True` to fit only even angular orders up to `n_max`, with
+all radial orders through `m_max`. The overview title marks this choice.
+The resulting fit has antipodal symmetry by construction.
+
+The returned result exposes the plotted radial coefficient
 functions and their propagated uncertainties directly as `result.spectra`.
 For example, `result.spectra.cosine[0]` and
 `result.spectra.cosine[2]` contain `I_0^c(q)` and `I_2^c(q)` on
-`result.spectra.q`. The final summary row shows a reduced two-dimensional
-reconstruction and its selected cosine and sine radial spectra. It retains the
-smallest power-ranked mode set carrying `reconstruction_threshold=0.95` of the
-fitted modal Parseval power by default; the threshold is configurable. The
-same data are returned as `result.reconstruction_image`,
-`result.reconstruction_indices`, and `result.reconstruction_spectra`. Optional
+`result.spectra.q`. The overview ends with the cosine and sine radial spectra
+of the full fit. The numerical result also provides a reduced reconstruction
+in `result.reconstruction_image`, `result.reconstruction_indices`, and
+`result.reconstruction_spectra`. It retains the smallest power-ranked mode set
+carrying the configured fraction of the fitted modal Parseval power
+(`reconstruction_threshold=0.95` by default). Optional
 `uncertainty` and `sample_weight` arrays change the fit metric to
 
 ```text
 sum_p sample_weight[p] * ((data[p] - fit[p]) / uncertainty[p])**2.
 ```
+
+With the default `absolute_uncertainty=True`, `uncertainty[p]` is the actual
+standard deviation of an independent pixel measurement. The covariance
+propagates these errors through the weighted fit. Additional `sample_weight`
+values, including fractional annulus coverage, change the fitting metric;
+they do not change the supplied pixel noise. Writing
+`A = (X.T @ W @ X)^-1 @ X.T @ W`, the returned covariance is
+`A @ diag(uncertainty**2) @ A.T`, evaluated using QR factors rather than an
+inverse normal matrix. With unit sample weights this reduces to the usual
+inverse precision matrix. Statistical precision factors should be included
+in `uncertainty` itself (for example `sigma / sqrt(precision_weight)`).
+
+With `absolute_uncertainty=False`, or without supplied uncertainties, the
+combined weights instead specify the relative precision model
+`Var(data[p]) = scale * uncertainty[p]**2 / sample_weight[p]` (unit
+uncertainties if absent). The residuals estimate its common scale. Its
+covariance and F tests are conditional on that model; they are not calibrated
+for geometric coverage weights with unknown pixel-noise variance. For
+experimental coverage-weighted fits, supply absolute measurement errors.
 
 The returned object contains the numerical fit, reconstructed and residual
 data, selection mask, effective weights, and angular powers.
@@ -179,7 +203,7 @@ sine_power[n]   = sum_m coefficient[(-n, m)]^2.
 The standard overview shows the powers as data points normalized by the
 largest cosine or sine power in the fit.  Both panels use the same global
 maximum.  The error bars are conditional one-standard-deviation uncertainties
-propagated from the ordinary least-squares coefficient covariance; the fitted
+propagated from the returned coefficient covariance; the fitted
 maximum used for normalization is treated as a fixed scale.
 
 `power_model_selector(coefficients, indices, threshold=0.95)` ranks individual
@@ -235,11 +259,55 @@ above `k * eps * s_max`, where `k` is the block size. The same retained
 directions determine the statistic and its reference degrees of freedom.
 When absolute experimental uncertainties are supplied, the statistic is
 compared with its chi-squared threshold with `r` degrees of freedom. When
-the covariance scale is estimated from the residuals, the corresponding
+the covariance scale is estimated from the residuals under the relative
+precision model described above, the corresponding
 finite-residual-degree-of-freedom F threshold is used. A point above its
-threshold rejects the joint null hypothesis that all radial coefficients of
+nominal threshold rejects the joint null hypothesis that all radial coefficients of
 that angular contribution are zero, conditional on the selected least-squares
 noise model.
+
+Holm correction is available on request through numerical properties of the
+same result. It is not highlighted in the standard overview. One family
+contains all positive-rank cosine and sine blocks in a single analysis,
+including the isotropic block. Missing blocks, the zero-order sine block,
+and rank-zero blocks do not inflate its size. A full rectangle with
+`n_max=25` normally has 51 tests, regardless of the number of radial modes.
+
+~~~python
+tests = result.block_tests
+tests.cosine_pvalue        # original, uncorrected p-values
+tests.cosine_holm_pvalue   # corrected over both branches jointly
+tests.sine_holm_pvalue
+tests.cosine_holm_reject   # boolean decisions at 1 - block_test_confidence
+tests.sine_holm_reject
+tests.holm_family_size
+~~~
+
+These are optional numerical diagnostics exposed as derived properties; existing
+function arguments, result constructors, and raw fields remain available.
+The family-wise alpha defaults to 0.05 and follows `block_test_confidence`.
+Holm is valid under arbitrary dependence when the individual p-values are
+valid under the chosen covariance model. It does not calibrate an invalid
+noise model or correct for selecting a basis or q range using the same data.
+The calibration simulations check the implementation in specified Gaussian
+models; they do not establish that these assumptions hold for reduced
+experimental data or that systematic errors are represented.
+
+The T_n panels retain explicitly labeled nominal, uncorrected reference
+thresholds under the assumed noise model. They do not identify physical
+causes or estimate the frequency of experimental artifacts. The standard
+overview contains no Holm rejection markers.
+
+For an observable expected to be parity even, a broad background of odd
+angular powers can serve as an empirical reference for noise, asymmetry, and
+processing artifacts. An even power below that background is not clearly
+resolved above this empirical level. This is a descriptive robustness
+criterion, not a calibrated p-value threshold. The comparison uses the same
+power normalization, but mode uncertainties and sensitivities can differ.
+Physical odd contributions must be excluded before treating them as a
+background; in particular, individual spin-flip channels may contain a
+chiral contribution. The analyzer does not automatically derive a cutoff
+from the odd powers.
 
 ## Detector-data preconditioning
 

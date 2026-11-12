@@ -14,7 +14,12 @@ from .indices import validate_indices
 
 @dataclass(frozen=True)
 class AngularBlockTests:
-    """Separate cosine and sine block tests for every angular order."""
+    """Raw block tests and joint-family Holm-adjusted p-values/decisions.
+
+    Holm properties combine both trigonometric branches into one family.
+    Missing and rank-zero blocks are excluded. The raw fields and constructor
+    remain unchanged; corrected properties are derived from those fields.
+    """
 
     orders: NDArray[np.int64]
     cosine_statistic: NDArray[np.float64]
@@ -26,6 +31,42 @@ class AngularBlockTests:
     cosine_critical_value: NDArray[np.float64]
     sine_critical_value: NDArray[np.float64]
     confidence: float
+
+    @property
+    def holm_family_size(self) -> int:
+        """Number of positive-rank blocks across both branches."""
+        return int(
+            np.count_nonzero(self.cosine_degrees_of_freedom > 0)
+            + np.count_nonzero(self.sine_degrees_of_freedom > 0)
+        )
+
+    def _joint_holm_pvalues(self):
+        pvalues = np.concatenate((self.cosine_pvalue, self.sine_pvalue))
+        present = np.concatenate((
+            self.cosine_degrees_of_freedom > 0,
+            self.sine_degrees_of_freedom > 0,
+        ))
+        return _holm_adjust(pvalues, present)
+
+    @property
+    def cosine_holm_pvalue(self) -> NDArray[np.float64]:
+        """Cosine p-values adjusted over the joint cosine/sine family."""
+        return self._joint_holm_pvalues()[:self.orders.size]
+
+    @property
+    def sine_holm_pvalue(self) -> NDArray[np.float64]:
+        """Sine p-values adjusted over the joint cosine/sine family."""
+        return self._joint_holm_pvalues()[self.orders.size:]
+
+    @property
+    def cosine_holm_reject(self) -> NDArray[np.bool_]:
+        """Holm rejections at family-wise alpha = 1 - confidence."""
+        return self.cosine_holm_pvalue <= 1.0 - self.confidence
+
+    @property
+    def sine_holm_reject(self) -> NDArray[np.bool_]:
+        """Holm rejections at family-wise alpha = 1 - confidence."""
+        return self.sine_holm_pvalue <= 1.0 - self.confidence
 
 
 def angular_block_tests(
@@ -43,10 +84,20 @@ def angular_block_tests(
     ``k * eps * s_max``, where ``k`` is the block size and ``eps`` is machine
     precision. Both are computed from a single SVD of the covariance block.
     When the residual variance was estimated from the same least-squares
-    fit, ``T_n / r`` is compared with an F distribution with
+    fit under noise proportional to the inverse combined fit weights,
+    ``T_n / r`` is compared with an F distribution with
     ``(r, residual_dof)`` degrees of
-    freedom.  Without ``residual_degrees_of_freedom``, the asymptotic
-    chi-squared distribution with ``r`` degrees of freedom is used.
+    freedom. Without ``residual_degrees_of_freedom``, a chi-squared reference
+    with ``r`` degrees of freedom is used. It is calibrated for a Gaussian
+    block with known absolute sampling covariance, including a covariance
+    propagated through additional geometric fit weights.
+
+    The returned Holm properties adjust both branches jointly, using every
+    positive-rank block in this call. They retain undefined p-values as NaN
+    and never reject those blocks. A positive-rank block with an unavailable
+    p-value still counts toward multiplicity, conservatively as p=1.
+    Holm controls family-wise error when the marginal p-values are valid;
+    it does not repair a misspecified covariance or account for model selection.
     """
     modes = validate_indices(indices)
     values = np.asarray(coefficients, dtype=float)
@@ -137,3 +188,19 @@ def _evaluate_reference_distribution(blocks, residual_dof, confidence):
             residual_dof,
         )
     return statistic, block_dof, pvalue, critical
+
+
+def _holm_adjust(pvalues, present):
+    """Joint step-down adjustment; unavailable present tests count as p=1."""
+    adjusted = np.full(pvalues.shape, np.nan)
+    family_size = np.count_nonzero(present)
+    available = present & np.isfinite(pvalues) & (pvalues >= 0) & (pvalues <= 1)
+    positions = np.flatnonzero(available)
+    if not positions.size:
+        return adjusted
+    order = positions[np.argsort(pvalues[positions], kind="stable")]
+    factors = family_size - np.arange(order.size)
+    adjusted[order] = np.minimum(
+        1.0, np.maximum.accumulate(factors * pvalues[order])
+    )
+    return adjusted

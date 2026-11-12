@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from sans2d_mode_analyzer import evaluate_expansion, standard_analyzer
+from sans2d_mode_analyzer import (
+    design_matrix,
+    evaluate_expansion,
+    pixel_integrated_annulus_design,
+    standard_analyzer,
+)
 
 
 def test_standard_analyzer_fits_and_writes_summary(tmp_path):
@@ -37,6 +42,8 @@ def test_standard_analyzer_fits_and_writes_summary(tmp_path):
     assert result.fit.mse < 1.0e-24
     assert result.fit_image.shape == intensity.shape
     assert result.powers.orders.tolist() == [0, 1, 2]
+    assert (1, 1) in result.fit.indices
+    assert (-1, 1) in result.fit.indices
     assert result.powers.cosine_uncertainty is not None
     assert result.spectra.q.shape == (300,)
     assert result.spectra.cosine.shape == (3, 300)
@@ -53,6 +60,68 @@ def test_standard_analyzer_fits_and_writes_summary(tmp_path):
         result.parity_fractions.even + result.parity_fractions.odd,
         1.0,
     )
+
+
+@pytest.mark.parametrize(("n_max", "signed_orders"), [(3, (0, 2, -2)), (1, (0,)), (0, (0,))])
+def test_standard_analyzer_even_only_refits_and_plots_selected_orders(
+    n_max, signed_orders, monkeypatch, tmp_path
+):
+    from matplotlib.figure import Figure
+
+    figures = []
+    monkeypatch.setattr(Figure, "savefig", lambda figure, *args, **kwargs: figures.append(figure))
+    q_min, q_max = 0.2, 1.0
+    q, theta = np.meshgrid(np.linspace(0.3, 0.9, 7), np.linspace(-2.3, 2.4, 19))
+    q, theta = q.ravel(), theta.ravel()
+    intensity = evaluate_expansion(
+        q, theta, [2.0, -0.25, 0.6, 0.4], [(0, 0), (2, 1), (-2, 1), (1, 0)],
+        q_min=q_min, q_max=q_max,
+    )
+    uncertainty = 0.2 + q / 10.0
+    result = standard_analyzer(
+        q * np.cos(theta),
+        q * np.sin(theta),
+        intensity,
+        q_range=(q_min, q_max),
+        mode_limits=(n_max, 1),
+        even_only=True,
+        uncertainty=uncertainty,
+        output_path=tmp_path / "even-only.png",
+    )
+
+    expected_indices = tuple((n, m) for m in range(2) for n in signed_orders)
+    assert result.fit.indices == expected_indices
+    design = design_matrix(q, theta, expected_indices, q_min=q_min, q_max=q_max)
+    expected_coefficients, *_ = np.linalg.lstsq(
+        design / uncertainty[:, None], intensity / uncertainty, rcond=None
+    )
+    np.testing.assert_allclose(result.fit.coefficients, expected_coefficients, atol=1e-13)
+    assert result.parity_fractions.odd == 0.0
+    assert result.parity_mismatch.normalized_rms == 0.0
+
+    figure = figures[0]
+    assert any("even only" in title.get_text() for title in figure.texts)
+    assert tuple(figure.get_size_inches()) == (16.0, 20.0)
+    assert len(figure.axes) == 14
+    assert figure.axes[0].get_subplotspec().get_gridspec().nrows == 5
+    axes = {axis.get_title(): axis for axis in figure.axes}
+    for branch, orders in (
+        ("cosine", [n for n in signed_orders if n >= 0]),
+        ("sine", [-n for n in signed_orders if n < 0]),
+    ):
+        power_axis = axes[f"{branch} angular powers"]
+        plotted_orders = [
+            order
+            for container in power_axis.containers
+            for order in container.lines[0].get_xdata()
+        ]
+        assert plotted_orders == orders
+        block_axis = axes[f"{branch} angular block tests"]
+        assert "odd orders" not in block_axis.get_legend_handles_labels()[1]
+        spectrum_axis = next(
+            axis for title, axis in axes.items() if title.startswith(f"{branch} radial spectra")
+        )
+        assert spectrum_axis.get_legend_handles_labels()[1] == [f"n={n}" for n in orders]
 
 
 def test_standard_analyzer_accepts_flat_detector_point_list(tmp_path):
@@ -150,6 +219,34 @@ def test_standard_analyzer_accepts_uncertainty_and_pixel_integration(tmp_path):
     assert np.any(
         (result.sample_weight_image > 0.0)
         & (result.sample_weight_image < 1.0)
+    )
+    # Check propagation through the actual high-level pixel-integration path
+    # using an independent SVD response, not just the lower-level fit helper.
+    integrated = pixel_integrated_annulus_design(
+        q_z, q_y, result.fit.indices, q_min=q_min, q_max=q_max, subpixels=3,
+    )
+    matrix = integrated.design_matrix[
+        result.selected_mask[integrated.selected_mask]
+    ]
+    sigma = uncertainty[result.selected_mask]
+    weight = result.sample_weight_image[result.selected_mask]
+    weighted_matrix = np.sqrt(weight)[:, None] * matrix / sigma[:, None]
+    noise_response = np.linalg.pinv(weighted_matrix) * np.sqrt(weight)
+    expected_covariance = noise_response @ noise_response.T
+    np.testing.assert_allclose(
+        result.fit.coefficient_covariance, expected_covariance, rtol=2e-12, atol=1e-17,
+    )
+    constant = result.fit.indices.index((0, 0))
+    np.testing.assert_allclose(
+        result.block_tests.cosine_statistic[0],
+        result.fit.coefficients[constant]**2 / expected_covariance[constant, constant],
+        rtol=2e-12,
+    )
+    # m=0 has a constant radial function sqrt(2 / (q_max**2-q_min**2)).
+    np.testing.assert_allclose(
+        result.spectra.cosine_uncertainty[0]**2,
+        2 * expected_covariance[constant, constant] / (q_max**2 - q_min**2),
+        rtol=2e-12,
     )
 
 

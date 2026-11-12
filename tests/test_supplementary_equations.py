@@ -9,6 +9,7 @@ blocks check that T_n and its reference rank retain the same directions.
 import numpy as np
 import pytest
 from scipy.special import betainc, eval_legendre, gammaincc
+from scipy.stats import chi2, f
 
 from sans2d_mode_analyzer import (
     angular_block_tests,
@@ -143,6 +144,7 @@ def test_overview_uses_common_angular_power_scale_distinct_from_product_mode_sca
                                  uncertainty=np.full(q.shape, 0.1), q_range=(lower, upper),
                                  mode_limits=(2, 1), output_path=tmp_path / "overview.png")
     figure = saved[0]
+    assert figure.axes[0].get_subplotspec().get_gridspec().nrows == 5
     axes = {axis.get_title(): axis for axis in figure.axes}
     for title, expected in [("cosine angular powers", {0: 4/4.5, 2: 0.25/4.5}),
                             ("sine angular powers", {2: 1.0})]:
@@ -165,6 +167,12 @@ def test_overview_uses_common_angular_power_scale_distinct_from_product_mode_sca
             np.testing.assert_allclose(line.get_ydata(), statistic[order])
         order = np.asarray(threshold_line.get_xdata(), dtype=int)
         np.testing.assert_allclose(threshold_line.get_ydata(), critical[order])
+        assert threshold_line.get_label().startswith("nominal")
+        assert not any(
+            collection.get_label().startswith("Holm")
+            for collection in axis.collections
+        )
+    assert analysis.block_tests.holm_family_size == 5
 
 
 @pytest.mark.parametrize("residual_dof", [None, 37])
@@ -193,7 +201,7 @@ def test_correlated_block_statistics_and_null_tails_have_correct_rank_factors(re
 
 @pytest.mark.parametrize("absolute", [True, False])
 def test_weighted_fit_covariance_matches_independent_qr_and_distinguishes_area_weights(absolute):
-    """S10--S13: absolute/residual covariance versus actual sampling covariance."""
+    """S10--S13: propagated absolute errors versus relative precision model."""
     lower, upper = 0.2, 1.0
     rng = np.random.default_rng(23)
     q, theta = rng.uniform(lower, upper, 91), rng.uniform(-2.4, 2.1, 91)
@@ -216,16 +224,17 @@ def test_weighted_fit_covariance_matches_independent_qr_and_distinguishes_area_w
     scale = 1.0 if absolute else q_statistic / (q.size - len(indices))
     result = fit_wls(q, theta, intensity, indices, sigma, sample_weight=area,
                      absolute_uncertainty=absolute, q_min=lower, q_max=upper)
+    actual_sampling_covariance = base_covariance @ (matrix.T @ ((area**2 / sigma**2)[:, None] * matrix)) @ base_covariance
     np.testing.assert_allclose(result.coefficients, expected_coefficients, rtol=2e-13)
-    np.testing.assert_allclose(result.coefficient_covariance, scale * base_covariance, rtol=2e-13, atol=2e-16)
+    expected_covariance = actual_sampling_covariance if absolute else scale * base_covariance
+    np.testing.assert_allclose(result.coefficient_covariance, expected_covariance, rtol=2e-13, atol=2e-16)
     np.testing.assert_allclose(result.mse, np.mean(residual**2), rtol=2e-13)
     np.testing.assert_allclose(result.reduced_chi_square, q_statistic / (q.size-len(indices)), rtol=2e-13)
-    actual_sampling_covariance = base_covariance @ (matrix.T @ ((area**2 / sigma**2)[:, None] * matrix)) @ base_covariance
     assert not np.allclose(base_covariance, actual_sampling_covariance, rtol=0.01, atol=0)
 
 
 def test_parity_and_compression_are_continuous_norm_identities():
-    """S25--S26 and S32: verify norms without coefficient-only expectations."""
+    """S26--S27 and S33: verify norms without coefficient-only expectations."""
     lower, upper = 0.1, 1.2
     q, theta, radial_weight, angular_weight = annular_quadrature(lower, upper)
     indices = [(0, 0), (2, 1), (-3, 2), (1, 0)]
@@ -273,3 +282,55 @@ def test_near_singular_block_reference_rank_matches_evaluated_dimension(
                                reference_tail(statistic), rtol=2e-14)
     np.testing.assert_allclose(reference_tail(getattr(result, f"{branch}_critical_value")[2]),
                                0.05, rtol=2e-13)
+
+
+@pytest.mark.parametrize("residual_dof", [None, 37])
+@pytest.mark.parametrize("permute", [False, True])
+def test_holm_equation_matches_closed_bonferroni_tests(residual_dof, permute):
+    """S24: independent closed-testing reference for correlated, unequal-rank blocks."""
+    indices = [(0, 0), (0, 1), (2, 0), (-1, 0), (-1, 2), (-1, 3), (-3, 0)]
+    groups = [(0, [0, 1]), (2, [2]), (-1, [3, 4, 5]), (-3, [6])]
+    factor = np.random.default_rng(412).normal(size=(7, 7)) + 3 * np.eye(7)
+    covariance = factor @ factor.T
+    coefficients = np.empty(7)
+    for (_, positions), probability in zip(groups, [0.0001, 0.013, 0.03, 0.2]):
+        rank = len(positions)
+        statistic = (
+            -2 * np.log(probability) if rank == 2 and residual_dof is None else None
+        )
+        if statistic is None:
+            statistic = (
+                chi2.isf(probability, rank) if residual_dof is None
+                else rank * f.isf(probability, rank, residual_dof)
+            )
+        standardized = np.zeros(rank)
+        standardized[0] = np.sqrt(statistic)
+        coefficients[positions] = np.linalg.cholesky(
+            covariance[np.ix_(positions, positions)]
+        ) @ standardized
+    if permute:
+        order = np.array([5, 0, 3, 2, 6, 1, 4])
+        indices = [indices[i] for i in order]
+        coefficients = coefficients[order]
+        covariance = covariance[np.ix_(order, order)]
+    result = angular_block_tests(
+        coefficients, covariance, indices, residual_degrees_of_freedom=residual_dof,
+    )
+    raw = np.array([
+        getattr(result, f"{'cosine' if n >= 0 else 'sine'}_pvalue")[abs(n)]
+        for n, _ in groups
+    ])
+    # Holm is equivalent to closed Bonferroni testing: enumerate all
+    # intersections containing a given null, rather than reproducing sorting.
+    expected = np.zeros(4)
+    for mask in range(1, 1 << 4):
+        subset = np.array([j for j in range(4) if mask & (1 << j)])
+        intersection_pvalue = min(1.0, len(subset) * raw[subset].min())
+        expected[subset] = np.maximum(expected[subset], intersection_pvalue)
+    for (n, _), probability in zip(groups, expected):
+        branch = "cosine" if n >= 0 else "sine"
+        np.testing.assert_allclose(
+            getattr(result, f"{branch}_holm_pvalue")[abs(n)], probability, rtol=2e-13,
+        )
+        assert getattr(result, f"{branch}_holm_reject")[abs(n)] == (probability <= 0.05)
+    assert result.holm_family_size == 4

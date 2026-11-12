@@ -49,6 +49,7 @@ else:
         data.intensity,
         uncertainty=data.uncertainty,
         sample_weight=annulus_weight,
+        beam_centering=True,
         q_range=q_range,
         mode_limits=mode_limits,
         output_path=output_directory / "experimental_10mT_fit.png",

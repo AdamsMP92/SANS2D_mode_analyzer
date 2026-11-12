@@ -149,13 +149,12 @@ def parity_power_fractions(
         raise ValueError("coefficients must be a one-dimensional array matching indices")
 
     powers = values**2
-    total_power = float(np.sum(powers))
+    even_orders = np.array([n % 2 == 0 for n, _ in modes])
+    even_power = float(np.sum(powers[even_orders]))
+    odd_power = float(np.sum(powers[~even_orders]))
+    total_power = even_power + odd_power
     if total_power == 0.0:
         raise ValueError("parity power fractions are undefined for zero total power")
-    even_power = sum(
-        power for power, (n, _) in zip(powers, modes) if abs(n) % 2 == 0
-    )
-    odd_power = total_power - even_power
     return ParityPowerFractions(
         even=float(even_power / total_power),
         odd=float(odd_power / total_power),
