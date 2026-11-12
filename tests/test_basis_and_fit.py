@@ -11,7 +11,6 @@ from sans2d_mode_analyzer import (
     fit_wls,
     parity_power_fractions,
     parity_mismatch_measures,
-    power_model_selector,
     rectangular_indices,
 )
 
@@ -166,13 +165,6 @@ def test_angular_power_uncertainty_includes_quadratic_gaussian_term():
         powers.cosine_uncertainty,
         [np.sqrt(expected_variance)],
     )
-
-
-def test_power_model_selector_returns_smallest_power_ranked_index_list():
-    indices = [(0, 0), (2, 0), (-2, 0), (0, 1)]
-    coefficients = np.sqrt([5.0, 1.0, 3.0, 1.0])
-    selected = power_model_selector(coefficients, indices, threshold=0.8)
-    assert selected == [(0, 0), (-2, 0)]
 
 
 def test_parity_power_fractions_partition_total_power():

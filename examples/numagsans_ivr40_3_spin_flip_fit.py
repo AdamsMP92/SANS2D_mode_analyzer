@@ -56,7 +56,6 @@ for index in (1, 2):
         sample_weight=annulus_weight,
         log_intensity_colorbar=False,
         output_path=output_directory / f"{data_set}.png",
-        reconstruction_threshold=0.999,
     )
 
     spectra_by_index[index] = analysis.spectra

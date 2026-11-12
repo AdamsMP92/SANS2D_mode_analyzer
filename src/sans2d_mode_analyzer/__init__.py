@@ -18,7 +18,6 @@ from .power import (
     angular_mode_powers,
     parity_power_fractions,
     parity_mismatch_measures,
-    power_model_selector,
 )
 from .preconditioning import (
     AffineDetectorGeometry,
@@ -89,7 +88,6 @@ __all__ = [
     "rectangular_indices",
     "parity_power_fractions",
     "parity_mismatch_measures",
-    "power_model_selector",
     "refine_center_by_parity",
     "rescale_intensity",
     "rotate_coordinates",

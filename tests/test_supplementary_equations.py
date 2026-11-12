@@ -19,7 +19,6 @@ from sans2d_mode_analyzer import (
     evaluate_expansion,
     fit_wls,
     parity_mismatch_measures,
-    power_model_selector,
     rectangular_indices,
     standard_analyzer,
 )
@@ -233,8 +232,8 @@ def test_weighted_fit_covariance_matches_independent_qr_and_distinguishes_area_w
     assert not np.allclose(base_covariance, actual_sampling_covariance, rtol=0.01, atol=0)
 
 
-def test_parity_and_compression_are_continuous_norm_identities():
-    """S26--S27 and S33: verify norms without coefficient-only expectations."""
+def test_parity_measures_are_continuous_norm_identities():
+    """S26--S27: verify norms without coefficient-only expectations."""
     lower, upper = 0.1, 1.2
     q, theta, radial_weight, angular_weight = annular_quadrature(lower, upper)
     indices = [(0, 0), (2, 1), (-3, 2), (1, 0)]
@@ -246,13 +245,6 @@ def test_parity_and_compression_are_continuous_norm_identities():
     mismatch = parity_mismatch_measures(coefficients, indices, q_min=lower, q_max=upper)
     np.testing.assert_allclose(mismatch.mean_square * mismatch.area, integrated_difference, rtol=2e-13)
     np.testing.assert_allclose(mismatch.normalized_rms**2, integrated_difference / integrated_square, rtol=2e-13)
-    threshold = 0.97
-    selected = power_model_selector(coefficients, indices, threshold)
-    selected_coefficients = [coefficients[indices.index(mode)] for mode in selected]
-    reduced = evaluate_expansion(q[:, None], theta[None, :], selected_coefficients, selected, q_min=lower, q_max=upper)
-    lost_power = radial_weight @ np.sum((signal-reduced)**2, axis=1) * angular_weight
-    np.testing.assert_allclose(lost_power, sum(c*c for c, mode in zip(coefficients, indices) if mode not in selected), rtol=2e-13)
-    assert lost_power <= (1-threshold) * integrated_square
 
 
 @pytest.mark.parametrize("eigenvalues,expected_rank", [([1.0, 5e-16], 2), ([1.0] + [2e-15] * 9, 1)])

@@ -45,17 +45,13 @@ Priorität: **1 → 2 → 3**, danach 4.
 
 ### Warum
 
-`power_model_selector` und die 95-%-Rekonstruktion ordnen die Moden nach ĉ².
-Damit beantworten sie die Frage „Was ist stabil enthalten?“ nicht:
+Die nach ĉ² bestimmten Modenleistungen beantworten die Frage „Was ist stabil
+enthalten?“ nicht:
 
 - Verrauschte Moden mit großer Varianz werden genauso aufgenommen wie gut
   bestimmte.
-- Da die Leistung ∫I² q dq vom kleinen q dominiert wird, gewinnt praktisch immer
-  der isotrope Anteil bei kleinem q. Bei 10 mT besteht die 95-%-Rekonstruktion
-  aus 5 Moden, alle mit n = 0. Durch die Trunkierung der radialen Moden schwingt
-  sie nach und wird bei q ≳ 0.08 negativ.
-- Bei 1 T sind für 95 % der Leistung 643 Moden nötig. Dort misst die Leistung
-  fast nur Rauschen (siehe Punkt 2).
+- Da die Leistung ∫I² q dq vom kleinen q dominiert wird, kann der isotrope
+  Anteil bei kleinem q die Rangfolge beherrschen.
 
 Die Blocktests `angular_block_tests` beantworten die Frage dagegen direkt. Es
 fehlt nur eine Korrektur für das Mehrfachtesten: Bei 51 Blöcken und 95 %
@@ -82,9 +78,8 @@ correction="holm")` in einem neuen Modul `structure.py`:
 5. Rückgabe: ausgewählte Blöcke, korrigierte p-Werte, der reduzierte Fit, sein
    Bild und seine Spektren sowie das Ergebnis des Modellvergleichs.
 
-Im `standard_analyzer` ersetzt diese Rekonstruktion die 95-%-Zeile im Plot. Die
-Leistungsauswahl kann als beschreibende Zusatzinformation erhalten bleiben. Im
-Panel der Blocktests sollte zusätzlich die Holm-Schwelle eingezeichnet werden.
+Eine solche Auswahl sollte als getrennte, studienspezifische Analyse erfolgen
+und nicht automatisch Bestandteil des `standard_analyzer` sein.
 
 ### Vorteil
 
@@ -111,12 +106,8 @@ Durch Maske, Gewichte und diskrete Abtastung sind die Designspalten im
 Datenraum im Allgemeinen nicht orthogonal; das bloße Abschneiden der
 Koeffizienten ersetzt den Refit daher nicht.
 
-Die Leistungsauswahl sollte als beschreibende Größe erhalten bleiben: Eine
-95-%-Rekonstruktion beschreibt eine normkontrollierte Kompression der
-gefitteten Funktion. Sie prüft weder Signifikanz noch Stabilität, ist aber
-auch bei verrauschten Daten nicht bedeutungslos. Eine Holm-korrigierte
-Signifikanzentscheidung belegt ihrerseits noch keine Stabilität gegenüber
-Basisgröße oder q-Bereich.
+Eine Holm-korrigierte Signifikanzentscheidung belegt noch keine Stabilität
+gegenüber Basisgröße oder q-Bereich.
 
 Beim vorgeschlagenen Schritt 4 wird das reduzierte Modell aus denselben Daten
 ausgewählt, an denen es anschließend getestet wird. Die gewöhnliche χ²- bzw.

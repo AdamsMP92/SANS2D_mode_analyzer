@@ -43,8 +43,7 @@ on a circular annulus is represented by orthonormal radial Legendre modes
 and real angular Fourier modes. We specify the linear fit, its covariance,
 the associated Parseval powers, angular block statistics and optional numerical
 Holm diagnostics, and the radial coefficient spectra. We also describe detector selection, optional pixel
-integration and parity-based centering, symmetry diagnostics, and reduced
-reconstructions.
+integration and parity-based centering, and symmetry diagnostics.
 All quantities refer to the chosen annulus and finite fitted expansion.
 \end{abstract}
 
@@ -682,37 +681,14 @@ $|I_p-\widehat I_p|/\sigma_p>5$ by default and does not delete samples.
 These functions do not implement experimental background, efficiency, or
 polarization-leakage corrections; those belong to the preceding reduction.
 
-\subsection{Reduced reconstructions}
-
-The \texttt{power\_model\_selector} ranks individual product modes by
-$\widehat c_j^2$. For a requested power fraction $0<\eta\leq1$, it retains
-the shortest descending-power list $\Modes_\eta$ satisfying
-\begin{equation}
- \sum_{j\in\Modes_\eta}\widehat c_j^2\geq\eta\mathcal{P},\qquad
- \|\widehat I-\widehat I_\eta\|_{\Ann}^2
- =\sum_{j\notin\Modes_\eta}\widehat c_j^2
- \leq(1-\eta)\mathcal{P}.
- \label{eq:power-reconstruction}
-\end{equation}
-The retained coefficients are taken from the full fit without refitting.
-This gives a norm-controlled compression of that fitted function, not an
-independent test against the measured data. The standard overview reports
-mode counts at $\eta=0.95,0.98,0.99$. Positive and negative signed indices
-count as distinct angular modes. The numerical result includes the reduced
-reconstruction and its radial spectra at a configurable threshold with
-default $\eta=0.95$. The reduced spectra and their covariance blocks retain
-only the selected coefficients. Their propagated uncertainties condition
-on the selected subset.
-
 \subsection{Implementation correspondence and data conventions}
 
-The definitions above correspond to \texttt{basis.py} and \texttt{indices.py}
-(basis and selected modes), \texttt{fit.py} (linear fit and covariance),
-\texttt{power.py} (powers, parity, and power selection), \texttt{spectra.py}
-(radial spectra), and \texttt{block\_test.py} (angular block tests), all
-under \texttt{src/sans2d\_mode\_analyzer/}. Explicit detector operations
-reside in \texttt{preconditioning.py}.
-The \texttt{standard\_analyzer} combines sample selection, fitting over the
+The definitions above correspond to \path{basis.py} and \path{indices.py}
+(basis and selected modes), \path{fit.py} (linear fit and covariance),
+\path{power.py} (powers and parity), \path{spectra.py} (radial spectra), and
+\path{block_test.py} (angular block tests). All source files lie under
+\path{src/sans2d_mode_analyzer/}. Explicit detector operations reside in
+\path{preconditioning.py}. The \path{standard_analyzer} combines sample selection, fitting over the
 selected modes, and the diagnostic overview. The numerical results and
 spectra are also returned directly.
 
@@ -734,7 +710,7 @@ be assigned physical units without establishing that provenance.
 A reproducible analysis specifies the input channel and reduction,
 coordinate units and angular origin, annulus, retained mode set, weights
 and covariance scaling, any centering or symmetry operations, the
-truncation and compression settings, and the test confidence and family.
+truncation settings, and the test confidence and family.
 The modal description then provides
 a common representation for measured and simulated detector patterns,
 with physical interpretation tied to the observable and assumptions used.

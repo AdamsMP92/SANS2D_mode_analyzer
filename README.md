@@ -127,12 +127,8 @@ functions and their propagated uncertainties directly as `result.spectra`.
 For example, `result.spectra.cosine[0]` and
 `result.spectra.cosine[2]` contain `I_0^c(q)` and `I_2^c(q)` on
 `result.spectra.q`. The overview ends with the cosine and sine radial spectra
-of the full fit. The numerical result also provides a reduced reconstruction
-in `result.reconstruction_image`, `result.reconstruction_indices`, and
-`result.reconstruction_spectra`. It retains the smallest power-ranked mode set
-carrying the configured fraction of the fitted modal Parseval power
-(`reconstruction_threshold=0.95` by default). Optional
-`uncertainty` and `sample_weight` arrays change the fit metric to
+of the full fit. Optional `uncertainty` and `sample_weight` arrays change the
+fit metric to
 
 ```text
 sum_p sample_weight[p] * ((data[p] - fit[p]) / uncertainty[p])**2.
@@ -206,20 +202,11 @@ maximum.  The error bars are conditional one-standard-deviation uncertainties
 propagated from the returned coefficient covariance; the fitted
 maximum used for normalization is treated as a fixed scale.
 
-`power_model_selector(coefficients, indices, threshold=0.95)` ranks individual
-`(n, m)` modes by `coefficient**2` and returns the shortest descending-power
-index list whose cumulative Parseval power reaches the requested fraction.
-The standard analyzer applies this selector at 95%, 98%, and 99% by default
-and reports both the retained `(n, m)` product-mode count and the number of
-distinct retained angular indices `n` for all three thresholds in the PNG
-title. Positive and negative `n` count as different angular modes because
-they represent the cosine and sine branches, respectively. The returned
-`selected_indices_by_threshold` dictionary contains the corresponding three
-index lists.  The two additional rows show the individual `(n, m)`
-power maps and the reconstructed radial spectra
+The individual `(n,m)` power maps and the radial spectra
 `I_n^c(q) = sum_m c_(+n,m) R_m(q)` and
-`I_n^s(q) = sum_m c_(-n,m) R_m(q)`.  Their shaded one-standard-deviation
-bands propagate the fitted coefficient covariance according to
+`I_n^s(q) = sum_m c_(-n,m) R_m(q)` are shown below the angular summaries.
+Their shaded one-standard-deviation bands propagate the fitted coefficient
+covariance according to
 `variance[I_n(q)] = R(q).T @ covariance_n @ R(q)`.
 
 `parity_power_fractions(coefficients, indices)` partitions the fitted Parseval

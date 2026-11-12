@@ -32,13 +32,13 @@ analysis = standard_analyzer(
 
 
 # Standard mode analyzer even only fit.
-mode_limits = (25, 25)
+mode_limits = (4, 10)
 analysis = standard_analyzer(
     q_z,
     q_y,
     noisy_image,
     q_range=q_range,
     mode_limits=mode_limits,
-    even_only=True,
+    even_only=False,
     output_path=output_directory / "synthetic_sphere_fit2.png",
 )

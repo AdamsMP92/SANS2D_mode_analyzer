@@ -8,10 +8,9 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from .basis import evaluate_expansion
 from .block_test import AngularBlockTests, angular_block_tests
 from .fit import MSEFitResult, fit_design_matrix, fit_mse, fit_wls
-from .indices import ModeIndex, even_angular_indices, rectangular_indices
+from .indices import even_angular_indices, rectangular_indices
 from .io import DetectorData
 from .power import (
     AngularModePowers,
@@ -20,7 +19,6 @@ from .power import (
     angular_mode_powers,
     parity_power_fractions,
     parity_mismatch_measures,
-    power_model_selector,
 )
 from .preconditioning import (
     CenterRefinementResult,
@@ -53,11 +51,6 @@ class StandardAnalysisResult:
     beam_centering_refinement: CenterRefinementResult | None
     center_shift_q_z: float
     center_shift_q_y: float
-    selected_indices_by_threshold: dict[float, tuple[ModeIndex, ...]]
-    reconstruction_threshold: float
-    reconstruction_indices: tuple[ModeIndex, ...]
-    reconstruction_image: NDArray[np.float64]
-    reconstruction_spectra: AngularRadialSpectra
     output_path: Path
 
 
@@ -117,8 +110,6 @@ def standard_analyzer(
     log_intensity_colorbar: bool = False,
     pixel_integration_subpixels: int | None = None,
     pixel_integration_chunk_size: int = 512,
-    power_thresholds: tuple[float, ...] = (0.95, 0.98, 0.99),
-    reconstruction_threshold: float = 0.95,
     block_test_confidence: float = 0.95,
     output_path: str | Path = "standard_analysis.png",
 ) -> StandardAnalysisResult:
@@ -146,10 +137,6 @@ def standard_analyzer(
     ``log_intensity_colorbar=True`` changes only the shared display norm of
     the input and fitted intensity panels; nonpositive display values are
     masked but remain included in the numerical fit.
-    ``reconstruction_threshold`` selects the smallest power-ranked subset
-    carrying at least that fraction of the fitted modal Parseval power.  Its
-    two-dimensional reconstruction and radial spectra are returned with
-    the numerical result.
     Holm-adjusted p-values and decisions remain available as numerical
     properties of block_tests, conditional on the chosen noise model.
     They are not highlighted in the standard overview. The even/odd power
@@ -337,56 +324,14 @@ def standard_analyzer(
         ),
         confidence=block_test_confidence,
     )
-    selected_indices_by_threshold = {
-        threshold: tuple(
-            power_model_selector(fit.coefficients, fit.indices, threshold)
-        )
-        for threshold in power_thresholds
-    }
-    reconstruction_fraction = float(reconstruction_threshold)
-    reconstruction_indices = tuple(
-        power_model_selector(
-            fit.coefficients,
-            fit.indices,
-            reconstruction_fraction,
-        )
-    )
-    position_by_index = {
-        index: position for position, index in enumerate(fit.indices)
-    }
-    reconstruction_positions = np.asarray(
-        [position_by_index[index] for index in reconstruction_indices],
-        dtype=int,
-    )
-    reconstruction_coefficients = fit.coefficients[reconstruction_positions]
-    reconstruction_covariance = fit.coefficient_covariance[
-        np.ix_(reconstruction_positions, reconstruction_positions)
-    ]
-    if selected_design_matrix is None:
-        reconstruction_values = evaluate_expansion(
-            q[selected],
-            theta[selected],
-            reconstruction_coefficients,
-            reconstruction_indices,
-            q_min=q_min,
-            q_max=q_max,
-        )
-    else:
-        reconstruction_values = (
-            selected_design_matrix[:, reconstruction_positions]
-            @ reconstruction_coefficients
-        )
-
     input_image = np.full(intensity.shape, np.nan)
     fit_image = np.full(intensity.shape, np.nan)
     residual_image = np.full(intensity.shape, np.nan)
-    reconstruction_image = np.full(intensity.shape, np.nan)
     uncertainty_image = None
     sample_weight_image = None
     input_image[selected] = intensity[selected]
     fit_image[selected] = fit.fitted_values
     residual_image[selected] = fit.residuals
-    reconstruction_image[selected] = reconstruction_values
     if uncertainty_array is not None:
         uncertainty_image = np.full(intensity.shape, np.nan)
         uncertainty_image[selected] = uncertainty_array[selected]
@@ -762,21 +707,6 @@ def standard_analyzer(
         if axis is cosine_spectra_axis or sine_orders.size:
             axis.legend(ncol=3, fontsize=7)
 
-    reconstruction_spectra = angular_radial_spectra(
-        q_spectrum,
-        reconstruction_coefficients,
-        reconstruction_indices,
-        q_min=q_min,
-        q_max=q_max,
-        coefficient_covariance=reconstruction_covariance,
-    )
-
-    threshold_summary = "   ".join(
-        f"[{threshold:.0%}: "
-        f"{len(selected_indices_by_threshold[threshold])} total, "
-        f"{len({n for n, _ in selected_indices_by_threshold[threshold]})} angular]"
-        for threshold in power_thresholds
-    )
     angular_mode_count = len({n for n, _ in fit.indices})
     basis_label = "even only" if even_only else "full basis"
     centering_summary = ""
@@ -787,11 +717,9 @@ def standard_analyzer(
             + f"   delta q=({center_shift_q_z:.3e}, {center_shift_q_y:.3e})"
         )
     figure.suptitle(
-        "Power-ranked model reduction "
+        "Mode analysis "
         f"({basis_label}: {len(fit.indices)} total, "
         f"{angular_mode_count} angular modes)\n"
-        + threshold_summary
-        + "\n"
         + f"even power fraction: {parity_fractions.even:.6f}   "
         + f"odd power fraction: {parity_fractions.odd:.6f}"
         + "\n"
@@ -824,11 +752,6 @@ def standard_analyzer(
         beam_centering_refinement=beam_centering_refinement,
         center_shift_q_z=center_shift_q_z,
         center_shift_q_y=center_shift_q_y,
-        selected_indices_by_threshold=selected_indices_by_threshold,
-        reconstruction_threshold=reconstruction_fraction,
-        reconstruction_indices=reconstruction_indices,
-        reconstruction_image=reconstruction_image,
-        reconstruction_spectra=reconstruction_spectra,
         output_path=path,
     )
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from .indices import ModeIndex, validate_indices
+from .indices import validate_indices
 
 
 @dataclass(frozen=True)
@@ -107,35 +107,6 @@ def angular_mode_powers(
         cosine_uncertainty=cosine_uncertainty,
         sine_uncertainty=sine_uncertainty,
     )
-
-
-def power_model_selector(
-    coefficients: ArrayLike,
-    indices: Iterable[Sequence[int]],
-    threshold: float = 0.95,
-) -> list[ModeIndex]:
-    """Return the smallest power-ranked mode list reaching ``threshold``.
-
-    The threshold is a fraction of the fitted Parseval power
-    ``sum(coefficients**2)``.  Returned indices are ordered from largest to
-    smallest individual mode power.
-    """
-    modes = validate_indices(indices)
-    values = np.asarray(coefficients, dtype=float)
-    if values.ndim != 1 or values.size != len(modes):
-        raise ValueError("coefficients must be a one-dimensional array matching indices")
-    fraction = float(threshold)
-    if not 0.0 < fraction <= 1.0:
-        raise ValueError("threshold must lie in the interval (0, 1]")
-
-    powers = values**2
-    total_power = float(np.sum(powers))
-    if total_power == 0.0:
-        return []
-    ranking = np.argsort(-powers, kind="stable")
-    cumulative = np.cumsum(powers[ranking]) / total_power
-    number = int(np.searchsorted(cumulative, fraction, side="left") + 1)
-    return [modes[position] for position in ranking[:number]]
 
 
 def parity_power_fractions(
