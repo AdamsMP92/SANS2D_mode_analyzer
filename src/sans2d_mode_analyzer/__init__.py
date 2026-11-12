@@ -8,10 +8,6 @@ from .basis import (
     radial_mode,
 )
 from .block_test import AngularBlockTests, angular_block_tests
-from .convergence import (
-    ModeConvergenceResult,
-    mode_convergence_standard_analyzer,
-)
 from .fit import MSEFitResult, fit_design_matrix, fit_mse, fit_wls
 from .indices import ModeIndex, even_angular_indices, rectangular_indices
 from .io import DetectorData, load_ascii_detector_data, load_ill_nexus
@@ -54,7 +50,6 @@ from .standard_analyzer import StandardAnalysisResult, standard_analyzer
 __all__ = [
     "MSEFitResult",
     "ModeIndex",
-    "ModeConvergenceResult",
     "DetectorData",
     "AngularModePowers",
     "AngularBlockTests",
@@ -88,7 +83,6 @@ __all__ = [
     "fractional_annulus_weights",
     "load_ascii_detector_data",
     "load_ill_nexus",
-    "mode_convergence_standard_analyzer",
     "mask_symmetry_diagnostic",
     "pixel_integrated_annulus_design",
     "radial_mode",

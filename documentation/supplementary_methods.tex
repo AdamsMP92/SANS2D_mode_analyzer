@@ -43,8 +43,8 @@ on a circular annulus is represented by orthonormal radial Legendre modes
 and real angular Fourier modes. We specify the linear fit, its covariance,
 the associated Parseval powers, angular block statistics and optional numerical
 Holm diagnostics, and the radial coefficient spectra. We also describe detector selection, optional pixel
-integration and parity-based centering, symmetry diagnostics, reduced
-reconstructions, and truncation checks.
+integration and parity-based centering, symmetry diagnostics, and reduced
+reconstructions.
 All quantities refer to the chosen annulus and finite fitted expansion.
 \end{abstract}
 
@@ -682,7 +682,7 @@ $|I_p-\widehat I_p|/\sigma_p>5$ by default and does not delete samples.
 These functions do not implement experimental background, efficiency, or
 polarization-leakage corrections; those belong to the preceding reduction.
 
-\subsection{Reduced reconstructions and truncation stability}
+\subsection{Reduced reconstructions}
 
 The \texttt{power\_model\_selector} ranks individual product modes by
 $\widehat c_j^2$. For a requested power fraction $0<\eta\leq1$, it retains
@@ -704,37 +704,6 @@ default $\eta=0.95$. The reduced spectra and their covariance blocks retain
 only the selected coefficients. Their propagated uncertainties condition
 on the selected subset.
 
-The optional \texttt{mode\_convergence\_standard\_analyzer} checks
-rectangular truncations against the largest tested rectangle, denoted by
-an asterisk. It constructs one maximum-order point-evaluated design matrix
-and refits every candidate subset with the same supplied weights. For a
-candidate $\Modes$, with prediction $\widehat{\bm y}_{\Modes}$ and
-coefficient vector zero-padded into the reference basis, it computes
-\begin{align}
- e_{\mathrm{pred}}&=
- \frac{\|\widehat{\bm y}_{\Modes}-\widehat{\bm y}_*\|_2}
-      {\|\widehat{\bm y}_*\|_2},\qquad
- e_{\mathrm{coef}}=
- \frac{\|\widehat{\bm c}_{\Modes}^{\mathrm{pad}}
-                -\widehat{\bm c}_*\|_2}{\|\widehat{\bm c}_*\|_2},
- \label{eq:convergence-norms}\\
- e_{\mathrm{MSE}}&=
- \frac{\max(\mathrm{MSE}_{\Modes}-\mathrm{MSE}_*,0)}
-      {N^{-1}\sum_p I_p^2}.
- \label{eq:convergence-mse}
-\end{align}
-Denominators are protected from zero numerically. All three comparisons
-use unweighted norms or unweighted MSE, even if the coefficient fits are
-weighted. A candidate is stable if all tolerances are met; their defaults
-are $0.01$, $0.05$, and $0.001$, respectively. The stable rectangle with
-the fewest product modes is selected, with ties resolved by the sum of
-orders, then angular order, then radial order. If either selected order
-equals its tested upper limit, stabilization within the tested limits is
-not declared. A finite reference comparison checks numerical stability,
-not predictive validity or freedom from overfitting. Centering and pixel
-integration are not options of the current convergence wrapper; centering
-can be applied explicitly before a sweep.
-
 \subsection{Implementation correspondence and data conventions}
 
 The definitions above correspond to \texttt{basis.py} and \texttt{indices.py}
@@ -742,8 +711,7 @@ The definitions above correspond to \texttt{basis.py} and \texttt{indices.py}
 \texttt{power.py} (powers, parity, and power selection), \texttt{spectra.py}
 (radial spectra), and \texttt{block\_test.py} (angular block tests), all
 under \texttt{src/sans2d\_mode\_analyzer/}. Explicit detector operations
-reside in \texttt{preconditioning.py} and the truncation sweep in
-\texttt{convergence.py}.
+reside in \texttt{preconditioning.py}.
 The \texttt{standard\_analyzer} combines sample selection, fitting over the
 selected modes, and the diagnostic overview. The numerical results and
 spectra are also returned directly.

@@ -37,7 +37,7 @@ allem die **abgeleiteten Kennzahlen**. Diese beruhen bisher auf Leistung
 enthalten sie deshalb einen systematischen Rauschbeitrag, oder ihre Skala hat
 keinen sinnvollen Nullpunkt.
 
-Priorität: **1 → 2 → 3**, danach 4 und 5.
+Priorität: **1 → 2 → 3**, danach 4.
 
 ---
 
@@ -661,76 +661,7 @@ Instrumentgeometrie und unabhängige Informationen zum Strahlzentrum.
 
 ---
 
-## 4. Trunkierung: Informationskriterien als Ergänzung
-
-### Warum
-
-Durch die Auswahl über Signifikanz (Punkt 1) und die Rauschkorrektur (Punkt 2)
-ist eine große Basis unkritisch. Die Wahl von (n_max, m_max) bleibt aber für zwei
-Dinge relevant: die **Rechenzeit** und die **Stabilität der Schlussfolgerungen**.
-Bei 10 mT braucht das Signal radial viel, im Winkel wenig:
-
-| (n_max, m_max) | K | χ² | AIC | BIC |
-|---|---|---|---|---|
-| (4, 8)   | 81   | 13038 | 13200 | 13766 |
-| (4, 16)  | 153  | 7296  | **7602** | **8671** |
-| (12, 12) | 325  | 8017  | 8667  | 10938 |
-| (25, 25) | 1326 | 6087  | 8739  | 18004 |
-
-`mode_convergence_standard_analyzer` vergleicht nur mit dem größten getesteten
-Modell und nutzt ungewichtete Normen. Es kann daher nicht feststellen, dass
-(4, 16) die Daten effizienter beschreibt.
-
-### Wie
-
-- AIC = χ² + 2K und BIC = χ² + K ln N auf dem Gitter, das die
-  Konvergenzfunktion ohnehin berechnet. Dafür das **gewichtete** χ² verwenden.
-- Optional: einen F-Test für verschachtelte Rechtecke als zusätzliches Kriterium.
-- Eine **Stabilitätsprüfung der Schlussfolgerungen**: Man prüft, ob die Auswahl
-  aus Punkt 1, also die Menge signifikanter Blöcke, über mehrere
-  (n_max, m_max) und gegebenenfalls über leicht verschobene q-Bereiche gleich
-  bleibt. Das ist die eigentliche Antwort auf „stabil enthalten“.
-
-### Vorteil
-
-Die Basisgröße wird datengetrieben begründet, und die Robustheit der
-Kernaussagen lässt sich direkt zeigen, statt sie nur numerisch zu konvergieren.
-
-### Einschätzung von Codex
-
-**Als Ergänzung sinnvoll, sobald Likelihood und Skalenbehandlung feststehen.**
-Die Stabilität der Schlussfolgerungen über mehrere Basisgrößen zu prüfen ist
-besonders nützlich. Signifikanzkorrektur und Rauschabzug machen eine beliebig
-große Basis jedoch nicht unkritisch: Konditionierung, Schätzervarianz und
-Verlässlichkeit der Kovarianz bleiben relevant.
-
-Die Formeln AIC = Q + 2K und BIC = Q + K ln N gelten bis auf gemeinsame
-Konstanten für eine Gaußsche Likelihood mit bekannter, fester
-Fehlerkovarianz. Ein durch zusätzliche geometrische Gewichte definiertes
-WLS-Q ist nicht automatisch ein solches Likelihood-Kriterium. Wird eine
-gemeinsame unbekannte Varianzskala aus den Residuen geschätzt, lautet der
-Fitanteil stattdessen N ln(Q/N); die Skala zählt als zusätzlicher Parameter:
-
-$$
-\mathrm{AIC}=N\ln(Q/N)+2(K+1)+\mathrm{const},
-\qquad
-\mathrm{BIC}=N\ln(Q/N)+(K+1)\ln N+\mathrm{const}.
-$$
-
-Dabei ist K die Anzahl identifizierbarer Modellparameter. Die Unterscheidung
-zwischen bekannter und geschätzter Skala erläutert auch die
-[R-Dokumentation zu extractAIC](https://stat.ethz.ch/R-manual/R-devel/library/stats/html/extractAIC.html).
-
-Informationskriterien sollten auf denselben Beobachtungen und mit denselben
-Rauschannahmen verglichen werden. Leicht veränderte q-Bereiche sind ein guter
-Robustheitstest, ihre AIC-/BIC-Werte aber kein unmittelbarer Modellvergleich,
-weil sich dabei die Datenmenge ändert. Ein F-Test nach datengesteuerter
-Auswahl eines Rechtecks benötigt wiederum die unter Punkt 1 beschriebene
-Berücksichtigung der Auswahl.
-
----
-
-## 5. Basisunabhängigkeit belegen: Referenz mit Fourier pro Ring
+## 4. Basisunabhängigkeit belegen: Referenz mit Fourier pro Ring
 
 ### Warum
 
@@ -777,7 +708,7 @@ Basisunabhängigkeit.
 
 ---
 
-## 6. Kleinere Punkte
+## 5. Kleinere Punkte
 
 - **Achsenbeschriftung** im Leistungspanel: `P_n^2/P_max^2` in `P_n/P_max`
   ändern. Dann kann die Erklärung im Supplement entfallen.
@@ -808,7 +739,7 @@ korrigierte p-Werte oder die jeweils zutreffenden Einzelentscheidungen.
 
 Neue Gleichungen und synthetische Regressionstests sollten gemeinsam mit den
 validierten Implementierungen ins Supplement übernommen werden. Die unter
-den Punkten 1–5 genannten Voraussetzungen gehören dabei ausdrücklich zur
+den Punkten 1–4 genannten Voraussetzungen gehören dabei ausdrücklich zur
 Definition und Interpretation der neuen Kennzahlen.
 
 ## Zusammenfassung
@@ -818,8 +749,7 @@ Definition und Interpretation der neuen Kennzahlen.
 | 1 | Auswahl über Signifikanz und reduzierter Refit | Was ist stabil enthalten? | mittel |
 | 2 | Rauschkorrektur der Leistungen und Fraktionen | Was liegt über dem Rauschen? | gering |
 | 3 | Verschiebungstest der ungeraden Moden | Ist die ungerade Struktur Zentrierung oder etwas anderes? | mittel |
-| 4 | AIC/BIC und Stabilität der Auswahl | Ist die Basisgröße angemessen, sind die Aussagen robust? | gering |
-| 5 | Fourier-Referenz pro Ring | Erfindet die radiale Glättung Struktur? | gering |
+| 4 | Fourier-Referenz pro Ring | Erfindet die radiale Glättung Struktur? | gering |
 
 ### Priorisierung von Codex
 
@@ -834,8 +764,8 @@ Grundlage weiter verfügbar sein.
    Achsenbeschriftung können parallel dazu als kleine Änderungen erfolgen.
 2. **Rauschdiagnostik und Holm-Korrektur ergänzen:** Rohleistungen erhalten,
    zusätzliche Größen eindeutig benennen und Fehlerraten synthetisch prüfen.
-3. **Ringvergleich und Informationskriterien ergänzen:** AIC/BIC können
-   hinzukommen, sobald Likelihood und Skalenbehandlung festgelegt sind.
+3. **Ringvergleich ergänzen:** Die Ringauswertung als expliziten
+   Robustheitscheck der radialen Darstellung verwenden.
 4. **Verschiebungstest entwickeln und kalibrieren:** Diskrete Fit-Antwort,
    Rang, Unsicherheit von G und Kanalphysik gemeinsam berücksichtigen. Dies
    ist der anspruchsvollste neue methodische Baustein.

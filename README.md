@@ -368,46 +368,6 @@ sensitivity checks. For formal inference, selecting the corresponding
 symmetry-constrained mode indices while retaining the original pixels is
 usually preferable.
 
-## Mode-convergence test
-
-`mode_convergence_standard_analyzer(...)` automates the selection of the rectangular
-truncation `(n_max, m_max)`. It fits every integer pair up to a supplied
-reference limit and compares each candidate with the largest tested model:
-
-```python
-from sans2d_mode_analyzer import mode_convergence_standard_analyzer
-
-convergence = mode_convergence_standard_analyzer(
-    q_z,
-    q_y,
-    intensity,
-    q_range=(0.015, 0.050),
-    mode_limits=(10, 10),
-    prediction_tolerance=0.01,
-    coefficient_tolerance=0.05,
-    relative_mse_tolerance=0.001,
-    output_path="converged_standard_analysis.png",
-)
-
-print(convergence.selected_n_max, convergence.selected_m_max)
-analysis = convergence.standard_analysis
-```
-
-A candidate is stable only when its reconstructed detector signal, its
-zero-padded coefficient vector, and its MSE are all sufficiently close to the
-largest tested reference model. Among stable candidates, the pair containing
-the fewest product modes is selected. The convergence sweep reuses one
-maximum-order design matrix; only the selected pair is passed to the complete
-`standard_analyzer(...)` for plotting and the returned final analysis.
-
-The result also contains the complete MSE, prediction-change,
-coefficient-change, relative-MSE-excess, and stability grids. If
-`stabilized_within_limits` is false, at least one selected order lies on the
-tested upper boundary, so convergence beyond that boundary has not been
-demonstrated. Agreement with a finite reference truncation is a numerical
-stability diagnostic, not proof that the reference itself is free of
-overfitting.
-
 ## Example
 
 ```python
