@@ -70,7 +70,7 @@ The example creates a noisy synthetic detector pattern proportional to
 ```
 
 where `F` is the normalized spherical form-factor amplitude.  It then fits a
-rectangular mode grid over `0.5 <= qR <= 5.0` and writes
+rectangular mode grid over `0.5 <= qR <= 10.0` and writes
 `examples/output/synthetic_sphere_fit.png`. The PNG contains the standard
 five-row overview of the input, fit, residual, angular powers, block
 statistics, mode-power maps, and radial spectra. The complete

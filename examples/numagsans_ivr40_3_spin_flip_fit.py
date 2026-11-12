@@ -1,6 +1,10 @@
 """Compare the IVR40_1 and IVR40_2 NuMagSANS spin-flip cross sections."""
 
 from pathlib import Path
+import sys
+
+repository = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(repository / "src"))
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,7 +30,6 @@ def load_cartesian_spin_flip(
 
 
 q_min, q_max = 0.05, 0.50
-repository = Path(__file__).resolve().parents[1]
 output_directory = repository / "examples" / "output"
 output_directory.mkdir(parents=True, exist_ok=True)
 spectra_by_index = {}

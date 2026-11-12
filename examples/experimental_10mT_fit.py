@@ -1,6 +1,10 @@
 """Apply the standard mode analyzer to the lowest-field experimental data."""
 
 from pathlib import Path
+import sys
+
+repository = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(repository / "src"))
 
 from sans2d_mode_analyzer import (
     fractional_annulus_weights,
@@ -9,7 +13,6 @@ from sans2d_mode_analyzer import (
 )
 
 
-repository = Path(__file__).resolve().parents[1]
 output_directory = repository / "examples" / "output"
 output_directory.mkdir(parents=True, exist_ok=True)
 data_file = (

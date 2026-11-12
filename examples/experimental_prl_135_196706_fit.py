@@ -1,6 +1,10 @@
 """Analyze the low-field nanoporous-Fe map associated with PRL 135."""
 
 from pathlib import Path
+import sys
+
+repository = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(repository / "src"))
 
 from sans2d_mode_analyzer import (
     load_ascii_detector_data,
@@ -8,7 +12,6 @@ from sans2d_mode_analyzer import (
 )
 
 
-repository = Path(__file__).resolve().parents[1]
 output_directory = repository / "examples" / "output"
 output_directory.mkdir(parents=True, exist_ok=True)
 data_file = (
