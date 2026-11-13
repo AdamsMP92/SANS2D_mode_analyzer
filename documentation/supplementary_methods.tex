@@ -27,6 +27,7 @@
 \renewcommand{\theequation}{S\arabic{equation}}
 \renewcommand{\thesection}{S\arabic{section}}
 
+
 \begin{document}
 \raggedbottom
 
@@ -44,10 +45,15 @@ and real angular Fourier modes. We specify the linear fit, its covariance,
 the associated Parseval powers, angular block statistics and optional numerical
 Holm diagnostics, and the radial coefficient spectra. We also describe detector selection, optional pixel
 integration and parity-based centering, and symmetry diagnostics.
-All quantities refer to the chosen annulus and finite fitted expansion.
+All quantities refer to the chosen annulus and finite fitted expansion. We
+finally distinguish numerical verification, data-level validation, and
+physical interpretation as separate stages of the analysis.
 \end{abstract}
 
 \maketitle
+
+\tableofcontents
+\clearpage
 
 \section{Methodology of the two-dimensional SANS mode analysis}
 \label{sec:methodology}
@@ -809,5 +815,12 @@ truncation settings, and the test confidence and family.
 The modal description then provides
 a common representation for measured and simulated detector patterns,
 with physical interpretation tied to the observable and assumptions used.
+
+\section{Verification and interpretation strategy}
+\label{sec:verification-strategy}
+
+
+
+
 
 \end{document}

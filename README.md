@@ -63,6 +63,50 @@ This creates every pair `(n, m)` with the listed signed angular modes and
 `0 <= m <= 5`; the result can be passed directly as `indices=indices` to
 `standard_analyzer` or the lower-level fit functions.
 
+For reproducible synthetic verification scenarios, select a random subset of
+a rectangular truncation with
+
+```python
+from sans2d_mode_analyzer import random_mode_indices
+from synthetic_models import random_mode_coefficients
+
+indices = random_mode_indices(
+    n_max=8,
+    m_max=3,
+    n_coeffs=6,
+    angular_parity="even",
+    seed=7,
+)
+coefficients = random_mode_coefficients(indices, seed=8)
+```
+
+Sampling is without replacement. `angular_parity` may be `"all"`, `"even"`,
+or `"odd"`; the constant angular mode belongs to the even set. The selected
+subset is random, but it is returned in the package's canonical radial-major
+order. This helper generates controlled test cases and is not a data-driven
+mode-selection method.
+`random_mode_coefficients` independently samples one coefficient in `[-1, 1]`
+for every selected index. Its output order matches the supplied index order.
+
+The resulting deterministic modal signal can be placed directly on a Cartesian
+detector annulus:
+
+```python
+from synthetic_models import generate_modal_detector_data
+
+q_z, q_y, intensity = generate_modal_detector_data(
+    q_min=0.015,
+    q_max=0.050,
+    indices=indices,
+    coefficients=coefficients,
+    number_of_pixels=161,
+)
+```
+
+Values outside the selected annulus are `NaN`. The three returned arrays can
+be passed directly to `standard_analyzer`; the detector convention remains
+`(q_z, q_y)` throughout the package.
+
 ## Environment and tests
 
 ```text

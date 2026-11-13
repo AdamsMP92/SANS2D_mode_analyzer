@@ -2,6 +2,16 @@
 
 import numpy as np
 
+from sans2d_mode_analyzer.basis import evaluate_expansion
+from sans2d_mode_analyzer.indices import validate_indices, random_mode_indices
+
+
+def random_mode_coefficients(indices, seed=None):
+    """Return one reproducible uniform random coefficient per mode index."""
+    modes = validate_indices(indices)
+    random = np.random.default_rng(seed)
+    return random.uniform(-1.0, 1.0, len(modes))
+
 
 def create_detector_grid(q_min, q_max, number_of_pixels=161):
     """Create Cartesian detector coordinates, polar coordinates, and an annulus mask."""
@@ -11,6 +21,66 @@ def create_detector_grid(q_min, q_max, number_of_pixels=161):
     theta = np.arctan2(q_y, q_z)
     inside = (q >= q_min) & (q <= q_max)
     return q_z, q_y, q, theta, inside
+
+
+def generate_modal_detector_data(
+    q_min,
+    q_max,
+    indices,
+    coefficients,
+    number_of_pixels=161,
+    radial_measure_exponent=1.0,
+):
+    """Evaluate a modal expansion on a Cartesian detector annulus."""
+    q_z, q_y, q, theta, inside = create_detector_grid(
+        q_min,
+        q_max,
+        number_of_pixels=number_of_pixels,
+    )
+    values = evaluate_expansion(
+        q[inside],
+        theta[inside],
+        coefficients,
+        indices,
+        q_min=q_min,
+        q_max=q_max,
+        radial_measure_exponent=radial_measure_exponent,
+    )
+    intensity = put_on_detector_grid(values, inside)
+    return q_z, q_y, intensity
+
+
+def generate_random_modal_detector_data(
+    q_min,
+    q_max,
+    n_max,
+    m_max,
+    n_coeffs=8,
+    angular_parity="even",
+    number_of_pixels=161,
+    radial_measure_exponent=1.0,
+    index_seed=7,
+    coefficient_seed=8,
+):
+    """Generate a reproducible random modal signal on a Cartesian detector."""
+    indices = random_mode_indices(
+        n_max=n_max,
+        m_max=m_max,
+        n_coeffs=n_coeffs,
+        angular_parity=angular_parity,
+        seed=index_seed,
+    )
+
+    coefficients = random_mode_coefficients(indices, seed=coefficient_seed)
+
+    return generate_modal_detector_data(
+        q_min,
+        q_max,
+        indices,
+        coefficients,
+        number_of_pixels=number_of_pixels,
+        radial_measure_exponent=radial_measure_exponent,
+    )
 
 
 def sphere_sans_signal(q, theta, radius):

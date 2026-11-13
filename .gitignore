@@ -8,6 +8,7 @@ dist/
 build/
 *.egg-info/
 /examples/output/
+/verification_examples/**/output/
 experimental_data/**/analysis_results/*.png
 experimental_data/**/analysis_results/covariance_comparison/*.png
 

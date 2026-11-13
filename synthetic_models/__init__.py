@@ -3,7 +3,10 @@
 from .model_functions import (
     add_white_noise,
     create_detector_grid,
+    generate_modal_detector_data,
+    generate_random_modal_detector_data,
     put_on_detector_grid,
+    random_mode_coefficients,
     sphere_sans_signal,
     powder_average_affine_noise_signal,
 )
@@ -11,7 +14,10 @@ from .model_functions import (
 __all__ = [
     "add_white_noise",
     "create_detector_grid",
+    "generate_modal_detector_data",
+    "generate_random_modal_detector_data",
     "put_on_detector_grid",
+    "random_mode_coefficients",
     "sphere_sans_signal",
     "powder_average_affine_noise_signal",
 ]

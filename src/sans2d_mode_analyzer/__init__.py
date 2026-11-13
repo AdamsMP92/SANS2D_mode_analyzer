@@ -14,6 +14,7 @@ from .indices import (
     ModeIndex,
     angular_mode_indices,
     even_angular_indices,
+    random_mode_indices,
     rectangular_indices,
 )
 from .io import DetectorData, load_ascii_detector_data, load_ill_nexus
@@ -121,6 +122,7 @@ __all__ = [
     "piecewise_linear_radial_basis",
     "radial_measure_weight",
     "radial_mode",
+    "random_mode_indices",
     "rectangular_indices",
     "parity_power_fractions",
     "parity_mismatch_measures",

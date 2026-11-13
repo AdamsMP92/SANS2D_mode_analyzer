@@ -4,6 +4,7 @@ import pytest
 from sans2d_mode_analyzer import (
     angular_mode_indices,
     even_angular_indices,
+    random_mode_indices,
     rectangular_indices,
 )
 
@@ -49,6 +50,48 @@ def test_selected_angular_modes_accept_numpy_integers():
         (0, 0),
         (2, 0),
     ]
+
+
+def test_random_indices_are_reproducible_unique_and_canonically_ordered():
+    first = random_mode_indices(5, 3, 11, seed=17)
+    second = random_mode_indices(5, 3, 11, seed=17)
+    candidates = rectangular_indices(5, 3)
+    positions = [candidates.index(index) for index in first]
+
+    assert first == second
+    assert len(first) == len(set(first)) == 11
+    assert positions == sorted(positions)
+
+
+@pytest.mark.parametrize(("parity", "remainder"), [("even", 0), ("odd", 1)])
+def test_random_indices_respect_angular_parity_filter(parity, remainder):
+    indices = random_mode_indices(
+        n_max=6,
+        m_max=2,
+        n_coeffs=8,
+        angular_parity=parity,
+        seed=4,
+    )
+
+    assert all(abs(n) % 2 == remainder for n, _ in indices)
+    if parity == "odd":
+        assert all(n != 0 for n, _ in indices)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "error"),
+    [
+        ({"n_coeffs": 0}, ValueError),
+        ({"n_coeffs": 2, "angular_parity": "neither"}, ValueError),
+        ({"n_coeffs": 3, "n_max": 0, "angular_parity": "odd"}, ValueError),
+        ({"n_coeffs": 2, "seed": -1}, ValueError),
+        ({"n_coeffs": 2, "seed": 1.5}, TypeError),
+    ],
+)
+def test_random_indices_reject_invalid_scenarios(kwargs, error):
+    arguments = {"n_max": 2, "m_max": 1, **kwargs}
+    with pytest.raises(error):
+        random_mode_indices(**arguments)
 
 
 @pytest.mark.parametrize(

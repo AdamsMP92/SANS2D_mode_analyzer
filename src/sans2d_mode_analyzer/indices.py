@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -44,6 +45,56 @@ def even_angular_indices(n_max: int, m_max: int) -> list[ModeIndex]:
         for n, m in rectangular_indices(n_max=n_max, m_max=m_max)
         if abs(n) % 2 == 0
     ]
+
+
+def random_mode_indices(
+    n_max: int,
+    m_max: int,
+    n_coeffs: int,
+    *,
+    angular_parity: Literal["all", "even", "odd"] = "all",
+    seed: int | None = None,
+) -> list[ModeIndex]:
+    """Select a reproducible random subset of a rectangular truncation.
+
+    ``n_coeffs`` distinct modes are sampled without replacement.  The optional
+    ``angular_parity`` filter restricts the candidate set according to
+    ``abs(n)`` before sampling; the constant mode therefore belongs to the
+    even set.  Although the subset is random, the returned modes retain the
+    canonical radial-major order used by :func:`rectangular_indices`.
+
+    This helper constructs controlled synthetic test scenarios.  It does not
+    infer or select modes from measured data.
+    """
+    count = _validate_limit(n_coeffs, "n_coeffs")
+    if count == 0:
+        raise ValueError("n_coeffs must be a positive integer")
+    if angular_parity not in {"all", "even", "odd"}:
+        raise ValueError("angular_parity must be 'all', 'even', or 'odd'")
+    if seed is not None:
+        if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)):
+            raise TypeError("seed must be a non-negative integer or None")
+        seed = int(seed)
+        if seed < 0:
+            raise ValueError("seed must be a non-negative integer or None")
+
+    candidates = rectangular_indices(n_max=n_max, m_max=m_max)
+    if angular_parity != "all":
+        requested_remainder = 0 if angular_parity == "even" else 1
+        candidates = [
+            index for index in candidates if abs(index[0]) % 2 == requested_remainder
+        ]
+    if count > len(candidates):
+        raise ValueError(
+            f"n_coeffs={count} exceeds the {len(candidates)} modes available "
+            f"for angular_parity={angular_parity!r}"
+        )
+
+    random = np.random.default_rng(seed)
+    selected_positions = np.sort(
+        random.choice(len(candidates), size=count, replace=False)
+    )
+    return [candidates[int(position)] for position in selected_positions]
 
 
 def angular_mode_indices(
