@@ -35,7 +35,7 @@
 Orthogonal mode analysis of two-dimensional small-angle neutron scattering}
 \author{SANS2D mode analyzer contributors}
 \noaffiliation
-\date{10 November 2026}
+\date{13 November 2026}
 
 \begin{abstract}
 This document describes the analysis implemented in
@@ -791,7 +791,12 @@ It returns the fit, detector-space arrays, powers, block tests, parity
 measures, and radial spectra independently of figure generation. The optional
 overview is rendered separately by \path{figure_backend.py}; setting
 \texttt{export\_figure=False} suppresses this rendering without changing the
-numerical analysis.
+numerical analysis.  Its final two rows show the signed spectra
+$I_n^{c,s}(q)$ on linear axes and the corresponding magnitudes
+$|I_n^{c,s}(q)|$ on common log-log axes.  The latter representation changes
+only the visualization: it exposes weak contributions over several decades
+but discards coefficient signs and turns every zero crossing into a downward
+cusp.  No additional fit or power calculation is performed.
 
 The ILL NeXus loader maps the stored \texttt{qx1} direction to $q_z$,
 \texttt{qy1} to $q_y$, and converts the stored inverse-angstrom coordinates
@@ -819,7 +824,256 @@ with physical interpretation tied to the observable and assumptions used.
 \section{Verification and interpretation strategy}
 \label{sec:verification-strategy}
 
+\subsection{White-Noise Test Model}
 
+This test isolates a particularly simple question: if the true intensity
+contains only a small number of occupied modes, how much fitted power should
+appear in all other modes solely because independent white noise was added to
+the detector pixels?  Answering this question provides a controlled reference
+for the ``noise carpet'' in a modal power map.  It is a verification of the
+linear fit and its covariance propagation, not a general noise model for
+reduced experimental SANS data.
+
+\paragraph{Synthetic data and repeated observations.}
+Let $\bm c$ denote the known coefficient vector used to generate a synthetic
+detector image and let $X$ be the same design matrix as in
+Eq.~\eqref{eq:solution}.  One noisy observation is
+\begin{equation}
+ \bm y=X\bm c+\bm\epsilon,
+ \qquad
+ \bm\epsilon\sim\mathcal{N}(\bm 0,\sigma^2\mathbf{I}_N),
+ \label{eq:white-noise-model}
+\end{equation}
+where every admitted detector pixel has the same noise variance and different
+pixels are statistically independent.  Repeating the simulation means keeping
+$X$, $\bm c$, and $\sigma$ fixed while drawing a new $\bm\epsilon$ for every
+realization.  The modes used to generate the exact image are called
+\emph{occupied}; all remaining fitted modes have a true coefficient equal to
+zero and are called \emph{unoccupied}.  The latter are the positions at which
+the noise floor is examined.
+
+For ordinary least squares, the fitted coefficients satisfy
+\begin{align}
+ \widehat{\bm c}
+ &=\bm c+A\bm\epsilon,
+ &A&=(X^{\trans}X)^{-1}X^{\trans},
+ \label{eq:white-noise-response}\\
+ C=\operatorname{Cov}(\widehat{\bm c})
+ &=\sigma^2AA^{\trans}
+ =\sigma^2(X^{\trans}X)^{-1}.
+ \label{eq:white-noise-covariance}
+\end{align}
+Thus the covariance is not obtained from the Monte Carlo calculation: it is
+known analytically from the imposed pixel noise and the sampled basis.  The
+Monte Carlo calculation independently checks whether repeated numerical fits
+follow this prediction.  Equation~\eqref{eq:white-noise-covariance} is the
+equal-variance specialization of Eq.~\eqref{eq:covariance}.
+
+\paragraph{Why a zero coefficient has nonzero fitted power.}
+The index $k$ below denotes one flattened product-mode index $(n,m)$.  Its
+fitted coefficient is normally distributed,
+\begin{equation}
+ \widehat c_k\sim\mathcal{N}(c_k,C_{kk}).
+ \label{eq:white-noise-coefficient}
+\end{equation}
+The displayed power of that product mode is the square
+$p_k=\widehat c_k^2$.  Squaring removes the sign of a noise fluctuation and
+therefore produces a positive average even when the true coefficient is zero:
+\begin{align}
+ \operatorname{E}[p_k]&=c_k^2+C_{kk},
+ \label{eq:white-noise-power-mean}\\
+ \operatorname{Var}(p_k)&=2C_{kk}^2+4c_k^2C_{kk}.
+ \label{eq:white-noise-power-variance}
+\end{align}
+For an unoccupied mode, $c_k=0$, and these expressions simplify to
+\begin{equation}
+ \operatorname{E}[p_k]=C_{kk},\qquad
+ \operatorname{Var}(p_k)=2C_{kk}^2,\qquad
+ \frac{p_k}{C_{kk}}\sim\chi_1^2.
+ \label{eq:white-noise-zero-mode}
+\end{equation}
+The diagonal covariance entry $C_{kk}$ is therefore the predicted mean noise
+power at position $(n,m)$.  It is also the quantity labelled ``analytic mean''
+in the Stage-2 power map.  The ``Monte Carlo mean'' is instead the arithmetic
+mean of $\widehat c_k^2$ over many independently generated detector images.
+Agreement between these two maps verifies the expected transfer of white
+pixel noise into modal power.
+
+Equation~\eqref{eq:white-noise-zero-mode} also explains why a single noisy
+fit does not look like a perfectly flat carpet.  For one unoccupied mode the
+standard deviation of $p_k$ is $\sqrt{2}$ times its mean.  Individual squared
+coefficients consequently fluctuate strongly, even though their ensemble
+mean is known exactly.  After averaging $R$ independent realizations, the
+relative standard error of that mean is $\sqrt{2/R}$.  For $R=1000$ this is
+about $4.5\%$ for each individual mode.
+
+\paragraph{When is the carpet constant?}
+White pixel noise does not by itself imply identical coefficient variances.
+The expected floor is constant only when the diagonal entries $C_{kk}$ are
+approximately equal.  Finite Cartesian sampling, an annular mask, missing
+pixels, nonuniform uncertainties, or an ill-conditioned set of sampled modes
+can make these entries different.  In the current Stage-2 test the predicted
+zero-mode powers vary by only about $2\%$ around their mean, so describing the
+ensemble-averaged result as an approximately constant carpet is appropriate.
+This near constancy is a property of this design matrix, rather than a general
+theorem about white noise.
+
+\paragraph{Powers summed over several radial modes.}
+The angular powers in Eq.~\eqref{eq:angular-power} sum several squared
+coefficients.  For a block $\mathcal{B}$ with coefficient subvector
+$\widehat{\bm c}_{\mathcal{B}}$ and covariance block $C_{\mathcal{B}}$, the
+corresponding power
+$p_{\mathcal{B}}=\widehat{\bm c}_{\mathcal{B}}^{\trans}
+\widehat{\bm c}_{\mathcal{B}}$ obeys
+\begin{align}
+ \operatorname{E}[p_{\mathcal{B}}]
+ &=\bm c_{\mathcal{B}}^{\trans}\bm c_{\mathcal{B}}
+   +\tr(C_{\mathcal{B}}),
+ \label{eq:white-noise-block-mean}\\
+ \operatorname{Var}(p_{\mathcal{B}})
+ &=2\tr(C_{\mathcal{B}}^2)
+   +4\bm c_{\mathcal{B}}^{\trans}C_{\mathcal{B}}\bm c_{\mathcal{B}}.
+ \label{eq:white-noise-block-variance}
+\end{align}
+For a true zero block, its mean noise power is therefore
+$\tr(C_{\mathcal{B}})$ and its variance is
+$2\tr(C_{\mathcal{B}}^2)$.  Coefficient correlations enter through the
+latter trace.  In the special case of $M$ independent coefficients with a
+common variance $v$, one has
+$p_{\mathcal{B}}/v\sim\chi_M^2$ and a relative standard deviation
+$\sqrt{2/M}$.  Summed angular powers can consequently appear substantially
+smoother than the powers of individual $(n,m)$ modes.
+
+\paragraph{Numerical realization of the test.}
+The reproducible script
+\path{verification_examples/stage_2/example_1.py} uses the deterministic
+Stage-1 signal, containing four occupied even-angular modes, and fits the full
+rectangle $|n|\leq8$, $0\leq m\leq8$.  It adds Gaussian pixel noise with
+$\sigma$ equal to $3\%$ of the maximum absolute exact intensity and evaluates
+1000 independent noise realizations.  In the resulting $(n,m)$ maps, positive
+$n$ denotes cosine modes, negative $n$ denotes sine modes, and the four white
+cells mark the occupied generating modes that are deliberately excluded from
+the zero-mode comparison.  The current test gives an empirical-to-analytic
+mean-power ratio of $1.0010$ and an empirical-to-analytic power-variance ratio
+of $1.0017$.  The normalized powers of the unoccupied modes also follow the
+$\chi_1^2$ density in Eq.~\eqref{eq:white-noise-zero-mode}.  These agreements
+verify the coefficient covariance and the positive noise bias of squared
+modal amplitudes under the stated assumptions.
+
+No Monte Carlo calculation is required to obtain Eqs.~\eqref{eq:white-noise-power-mean}--
+\eqref{eq:white-noise-block-variance}; it is used here as a transparent
+numerical verification.  Experimental data can contain counting-statistical
+heteroscedasticity, background-subtraction errors, interpolation artifacts,
+pixel-to-pixel correlations, centering uncertainty, and model truncation
+error.  In those cases the white-noise test remains a useful regression test,
+but its analytic carpet must not be interpreted as a calibrated experimental
+significance threshold unless the corresponding experimental covariance
+model has independently been justified.
+
+\subsection{Heteroskedastic Gaussian Test Model}
+
+The Stage-3 test removes the equal-variance assumption while retaining
+independent Gaussian detector errors.  Its purpose is to verify that known,
+pixel-dependent experimental uncertainties are propagated through the
+weighted fit correctly.  The observation model is
+\begin{equation}
+ \bm y=X\bm c+\bm\epsilon,
+ \qquad
+ \bm\epsilon\sim\mathcal{N}(\bm0,\Sigma),
+ \qquad
+ \Sigma=\operatorname{diag}(\sigma_1^2,\ldots,\sigma_N^2).
+ \label{eq:heteroskedastic-model}
+\end{equation}
+The errors remain statistically independent, but their variances need not be
+equal.  This distinction is important: heteroskedastic noise is not white
+noise, even though both models have a diagonal pixel covariance.
+
+\paragraph{Weighted estimator and analytic covariance.}
+When the supplied standard deviations are the true measurement errors and no
+additional sample weights are used, inverse-variance weighting gives
+\begin{align}
+ W&=\Sigma^{-1},\nonumber\\
+ \widehat{\bm c}
+ &=\bm c+L\bm\epsilon,
+ &L&=(X^{\trans}\Sigma^{-1}X)^{-1}X^{\trans}\Sigma^{-1},
+ \label{eq:heteroskedastic-response}\\
+ C=\operatorname{Cov}(\widehat{\bm c})
+ &=L\Sigma L^{\trans}
+ =(X^{\trans}\Sigma^{-1}X)^{-1}.
+ \label{eq:heteroskedastic-covariance}
+\end{align}
+This is the inverse-variance specialization of the sandwich covariance in
+Eq.~\eqref{eq:sandwich}.  The final equality in
+Eq.~\eqref{eq:heteroskedastic-covariance} relies on using the correct
+$W=\Sigma^{-1}$.  If the supplied uncertainties do not describe the actual
+pixel variances, the fit remains numerically defined but its reported
+covariance and probabilistic calibration need not be correct.
+
+Because Eq.~\eqref{eq:heteroskedastic-model} is Gaussian and the estimator is
+linear,
+\begin{equation}
+ \widehat c_k\sim\mathcal{N}(c_k,C_{kk}),
+ \qquad
+ c_k=0\ Longrightarrow\
+ \frac{\widehat c_k^2}{C_{kk}}\sim\chi_1^2.
+ \label{eq:heteroskedastic-zero-mode}
+\end{equation}
+Thus the normalized zero-mode power has exactly the same reference
+distribution as in Eq.~\eqref{eq:white-noise-zero-mode}.  What changes is the
+unnormalized mean power $C_{kk}$: unequal pixel errors alter the fitted-mode
+covariance through the complete sampled basis and generally produce a
+mode-dependent noise floor.  Dividing every mode by one common empirical
+floor would therefore discard relevant information.  The appropriate
+normalization is the individual analytic variance $C_{kk}$.
+
+\paragraph{Controlled radial uncertainty profile.}
+To make this effect visible without introducing a physical SANS count model,
+the Stage-3 example prescribes a simple radial standard-deviation profile.
+For an admitted pixel $p$, define
+\begin{equation}
+ u_p=\frac{q_p-q_{\min}}{q_{\max}-q_{\min}},
+ \qquad
+ \sigma_p=0.015 I_{\max}(1+3u_p),
+ \qquad
+ I_{\max}=\max_p|I_p^{\mathrm{exact}}|.
+ \label{eq:heteroskedastic-profile}
+\end{equation}
+The pixel standard deviation therefore rises from $1.5\%$ to $6\%$ of the
+maximum exact intensity between the inner and outer annulus boundaries.  This
+profile is deliberately chosen as a transparent numerical test; it is not
+claimed to be a detector or counting-statistical model.
+
+The script \path{verification_examples/stage_3/example_1.py} uses the same
+four-mode exact signal and full $|n|\leq8$, $0\leq m\leq8$ fit as Stage~2.
+It propagates Eq.~\eqref{eq:heteroskedastic-profile} analytically and compares
+the result with 1000 independent noise realizations.  The expected powers of
+the 149 unoccupied modes have a relative variation of about $10.0\%$, compared
+with about $2\%$ in the equal-variance Stage-2 design.  Nevertheless, the
+empirical-to-analytic mean-power ratio is $0.9982$, the corresponding
+power-variance ratio is $0.9943$, and the normalized powers follow the
+$\chi_1^2$ reference distribution.  The structured raw power floor is
+therefore predicted by the weighted design rather than indicating occupied
+physical modes.
+
+\paragraph{Regression criterion.}
+The automated test \path{tests/test_stage_3_regression.py} generates 1024
+independent realizations with a fixed random seed and passes the known
+$\sigma_p$ values to the absolute-uncertainty fit.  It verifies the reported
+coefficient covariance against Eq.~\eqref{eq:heteroskedastic-covariance}.  For
+each unoccupied mode it then forms
+\begin{equation}
+ z_{rk}=\frac{\widehat c_{rk}-c_k}{\sqrt{C_{kk}}},
+ \label{eq:heteroskedastic-standardized-error}
+\end{equation}
+where $r$ labels the realization, and checks
+$\operatorname{E}[z_k]=0$, $\operatorname{E}[z_k^2]=1$,
+$\operatorname{Var}(z_k^2)=2$, and $95\%$ coverage of the
+$\chi_1^2$ quantile.  The acceptance tolerances are five analytic Monte Carlo
+standard errors for 1024 realizations.  They are therefore tied to the finite
+ensemble size rather than to the particular values generated by the fixed
+seed.  This regression test verifies the complete path from a supplied
+heteroskedastic error map through weighted fitting to calibrated modal power;
+it does not establish that an experimental error map is itself correct.
 
 
 

@@ -60,8 +60,8 @@ def export_standard_analysis_figure(
     residual_image = result.residual_image
     selected = result.selected_mask
 
-    figure = plt.figure(figsize=(16.0, 20.0), constrained_layout=True)
-    grid = figure.add_gridspec(5, 6)
+    figure = plt.figure(figsize=(16.0, 24.0), constrained_layout=True)
+    grid = figure.add_gridspec(6, 6)
     map_axes = [
         figure.add_subplot(grid[0, 0:2]),
         figure.add_subplot(grid[0, 2:4]),
@@ -76,6 +76,10 @@ def export_standard_analysis_figure(
     cosine_spectra_axis = figure.add_subplot(grid[4, 0:3])
     sine_spectra_axis = figure.add_subplot(
         grid[4, 3:6], sharey=cosine_spectra_axis
+    )
+    cosine_magnitude_axis = figure.add_subplot(grid[5, 0:3])
+    sine_magnitude_axis = figure.add_subplot(
+        grid[5, 3:6], sharey=cosine_magnitude_axis
     )
 
     common_min = float(np.nanmin(input_image))
@@ -468,6 +472,26 @@ def export_standard_analysis_figure(
                 alpha=0.08,
                 linewidth=0.0,
             )
+        cosine_magnitude_axis.plot(
+            spectra.q,
+            np.where(
+                np.abs(spectra.cosine[order]) > 0.0,
+                np.abs(spectra.cosine[order]),
+                np.nan,
+            ),
+            color=color,
+        )
+        if reference is not None:
+            cosine_magnitude_axis.plot(
+                reference.spectra.q,
+                np.where(
+                    np.abs(reference.spectra.cosine[order]) > 0.0,
+                    np.abs(reference.spectra.cosine[order]),
+                    np.nan,
+                ),
+                "--",
+                color=color,
+            )
     for order in sine_orders:
         color = colors(int(order) % 10)
         sine_spectra_axis.plot(
@@ -502,6 +526,26 @@ def export_standard_analysis_figure(
                 alpha=0.08,
                 linewidth=0.0,
             )
+        sine_magnitude_axis.plot(
+            spectra.q,
+            np.where(
+                np.abs(spectra.sine[order]) > 0.0,
+                np.abs(spectra.sine[order]),
+                np.nan,
+            ),
+            color=color,
+        )
+        if reference is not None:
+            sine_magnitude_axis.plot(
+                reference.spectra.q,
+                np.where(
+                    np.abs(reference.spectra.sine[order]) > 0.0,
+                    np.abs(reference.spectra.sine[order]),
+                    np.nan,
+                ),
+                "--",
+                color=color,
+            )
     for axis, title in zip(
         [cosine_spectra_axis, sine_spectra_axis],
         [r"cosine radial spectra $I_n^c(q)$", r"sine radial spectra $I_n^s(q)$"],
@@ -514,6 +558,50 @@ def export_standard_analysis_figure(
         axis.grid(alpha=0.25)
         if axis is cosine_spectra_axis or sine_orders.size:
             axis.legend(ncol=3, fontsize=7)
+
+    positive_q = spectra.q[spectra.q > 0.0]
+    if reference is not None:
+        positive_q = np.concatenate(
+            [positive_q, reference.spectra.q[reference.spectra.q > 0.0]]
+        )
+    if positive_q.size == 0:
+        raise ValueError("log-log radial spectra require at least one positive q value")
+    magnitude_values = []
+    for order in cosine_orders:
+        values = np.abs(spectra.cosine[order])
+        magnitude_values.append(values[values > 0.0])
+        if reference is not None:
+            values = np.abs(reference.spectra.cosine[order])
+            magnitude_values.append(values[values > 0.0])
+    for order in sine_orders:
+        values = np.abs(spectra.sine[order])
+        magnitude_values.append(values[values > 0.0])
+        if reference is not None:
+            values = np.abs(reference.spectra.sine[order])
+            magnitude_values.append(values[values > 0.0])
+    positive_magnitudes = np.concatenate(
+        [values for values in magnitude_values if values.size]
+    )
+    magnitude_minimum = max(
+        float(np.min(positive_magnitudes)) / 1.5,
+        np.finfo(float).tiny,
+    )
+    magnitude_maximum = float(np.max(positive_magnitudes)) * 1.5
+    for axis, title in zip(
+        [cosine_magnitude_axis, sine_magnitude_axis],
+        [
+            r"absolute cosine radial spectra $|I_n^c(q)|$",
+            r"absolute sine radial spectra $|I_n^s(q)|$",
+        ],
+    ):
+        axis.set_title(title)
+        axis.set_xlabel("q")
+        axis.set_ylabel(r"$|I_n(q)|$")
+        axis.set_xscale("log")
+        axis.set_yscale("log")
+        axis.set_xlim(float(np.min(positive_q)), q_max)
+        axis.set_ylim(magnitude_minimum, magnitude_maximum)
+        axis.grid(alpha=0.25, which="both")
 
     angular_mode_count = len({n for n, _ in fit.indices})
     centering_summary = ""

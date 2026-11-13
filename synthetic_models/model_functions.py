@@ -61,8 +61,13 @@ def generate_random_modal_detector_data(
     radial_measure_exponent=1.0,
     index_seed=7,
     coefficient_seed=8,
+    return_model=False,
 ):
-    """Generate a reproducible random modal signal on a Cartesian detector."""
+    """Generate a reproducible random modal signal on a Cartesian detector.
+
+    With ``return_model=True``, append the generating ``(n, m)`` index array
+    and coefficient vector to the returned ``q_z, q_y, intensity`` arrays.
+    """
     indices = random_mode_indices(
         n_max=n_max,
         m_max=m_max,
@@ -73,7 +78,7 @@ def generate_random_modal_detector_data(
 
     coefficients = random_mode_coefficients(indices, seed=coefficient_seed)
 
-    return generate_modal_detector_data(
+    detector_data = generate_modal_detector_data(
         q_min,
         q_max,
         indices,
@@ -81,6 +86,13 @@ def generate_random_modal_detector_data(
         number_of_pixels=number_of_pixels,
         radial_measure_exponent=radial_measure_exponent,
     )
+    if return_model:
+        return (
+            *detector_data,
+            np.asarray(indices, dtype=int),
+            np.asarray(coefficients, dtype=float),
+        )
+    return detector_data
 
 
 def sphere_sans_signal(q, theta, radius):
@@ -97,11 +109,41 @@ def sphere_sans_signal(q, theta, radius):
 
 
 def add_white_noise(signal, relative_noise=0.03, seed=7):
-    """Add reproducible white Gaussian noise relative to the signal maximum."""
-    noise_sigma = relative_noise * signal.max()
+    """Add white Gaussian noise relative to the largest absolute finite value."""
+    signal = np.asarray(signal, dtype=float)
+    finite = np.isfinite(signal)
+    if not np.any(finite):
+        raise ValueError("signal must contain at least one finite value")
+    noise_sigma = relative_noise * np.max(np.abs(signal[finite]))
     random = np.random.default_rng(seed)
-    noisy_signal = signal + random.normal(0.0, noise_sigma, signal.shape)
+    noisy_signal = signal.copy()
+    noisy_signal[finite] += random.normal(0.0, noise_sigma, np.count_nonzero(finite))
     return noisy_signal, noise_sigma
+
+
+def add_heteroskedastic_gaussian_noise(signal, uncertainty, seed=7):
+    """Add independent Gaussian noise with a supplied standard deviation map."""
+    signal, uncertainty = np.broadcast_arrays(
+        np.asarray(signal, dtype=float),
+        np.asarray(uncertainty, dtype=float),
+    )
+    finite = np.isfinite(signal)
+    if not np.any(finite):
+        raise ValueError("signal must contain at least one finite value")
+    if not np.all(np.isfinite(uncertainty[finite])) or np.any(
+        uncertainty[finite] <= 0.0
+    ):
+        raise ValueError(
+            "uncertainty must be finite and positive wherever signal is finite"
+        )
+    random = np.random.default_rng(seed)
+    noisy_signal = signal.copy()
+    noisy_signal[finite] += random.normal(
+        0.0,
+        uncertainty[finite],
+        np.count_nonzero(finite),
+    )
+    return noisy_signal
 
 
 def put_on_detector_grid(values, inside):

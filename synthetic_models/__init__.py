@@ -1,6 +1,7 @@
 """Small synthetic data models used by the examples."""
 
 from .model_functions import (
+    add_heteroskedastic_gaussian_noise,
     add_white_noise,
     create_detector_grid,
     generate_modal_detector_data,
@@ -12,6 +13,7 @@ from .model_functions import (
 )
 
 __all__ = [
+    "add_heteroskedastic_gaussian_noise",
     "add_white_noise",
     "create_detector_grid",
     "generate_modal_detector_data",

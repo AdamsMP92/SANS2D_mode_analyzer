@@ -106,6 +106,9 @@ q_z, q_y, intensity = generate_modal_detector_data(
 Values outside the selected annulus are `NaN`. The three returned arrays can
 be passed directly to `standard_analyzer`; the detector convention remains
 `(q_z, q_y)` throughout the package.
+Set `return_model=True` on `generate_random_modal_detector_data` to append the
+generating `(n, m)` index array and coefficient vector to these three detector
+arrays. This is intended for coefficient-recovery and regression tests.
 
 ## Environment and tests
 
@@ -143,12 +146,14 @@ The second fit uses the exact angular orders expected from
 `1 + cos(theta)^2`, while retaining a more flexible radial expansion. It
 therefore demonstrates how a physically motivated angular subspace can be
 passed directly to `standard_analyzer` without imposing a rectangular angular
-truncation. Both PNGs contain the standard five-row overview of the input,
+truncation. Both PNGs contain the standard six-row overview of the input,
 fit, residual, angular powers, block statistics, mode-power maps, and radial
-spectra. The complete beginner-oriented script is in
+spectra. The final row repeats the magnitudes of the radial spectra on common
+log-log axes. The complete beginner-oriented script is in
 [`examples/synthetic_sphere_fit.py`](examples/synthetic_sphere_fit.py).
-The detector construction, sphere model, white-noise addition, and insertion
-onto the masked detector grid are separate short functions in
+The detector construction, sphere model, white-noise and supplied-map
+heteroskedastic Gaussian-noise addition, and insertion onto the masked
+detector grid are separate short functions in
 [`synthetic_models/model_functions.py`](synthetic_models/model_functions.py).
 
 The repository also contains the supplied experimental NeXus files under
@@ -275,8 +280,9 @@ The returned result exposes the plotted radial coefficient
 functions and their propagated uncertainties directly as `result.spectra`.
 For example, `result.spectra.cosine[0]` and
 `result.spectra.cosine[2]` contain `I_0^c(q)` and `I_2^c(q)` on
-`result.spectra.q`. The overview ends with the cosine and sine radial spectra
-of the full fit. Optional `uncertainty` and `sample_weight` arrays change the
+`result.spectra.q`. The overview ends with the signed cosine and sine radial
+spectra of the full fit followed by their absolute values on common log-log
+axes. Optional `uncertainty` and `sample_weight` arrays change the
 fit metric to
 
 ```text

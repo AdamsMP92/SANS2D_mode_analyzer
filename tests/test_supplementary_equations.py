@@ -143,7 +143,7 @@ def test_overview_uses_common_angular_power_scale_distinct_from_product_mode_sca
                                  uncertainty=np.full(q.shape, 0.1), q_range=(lower, upper),
                                  mode_limits=(2, 1), output_path=tmp_path / "overview.png")
     figure = saved[0]
-    assert figure.axes[0].get_subplotspec().get_gridspec().nrows == 5
+    assert figure.axes[0].get_subplotspec().get_gridspec().nrows == 6
     axes = {axis.get_title(): axis for axis in figure.axes}
     for title, expected in [("cosine angular powers", {0: 4/4.5, 2: 0.25/4.5}),
                             ("sine angular powers", {2: 1.0})]:

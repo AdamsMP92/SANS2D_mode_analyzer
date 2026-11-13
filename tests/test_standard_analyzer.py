@@ -236,9 +236,9 @@ def test_standard_analyzer_even_only_refits_and_plots_selected_orders(
 
     figure = figures[0]
     assert any("even only" in title.get_text() for title in figure.texts)
-    assert tuple(figure.get_size_inches()) == (16.0, 20.0)
-    assert len(figure.axes) == 14
-    assert figure.axes[0].get_subplotspec().get_gridspec().nrows == 5
+    assert tuple(figure.get_size_inches()) == (16.0, 24.0)
+    assert len(figure.axes) == 16
+    assert figure.axes[0].get_subplotspec().get_gridspec().nrows == 6
     axes = {axis.get_title(): axis for axis in figure.axes}
     for branch, orders in (
         ("cosine", [n for n in signed_orders if n >= 0]),
@@ -257,6 +257,9 @@ def test_standard_analyzer_even_only_refits_and_plots_selected_orders(
             axis for title, axis in axes.items() if title.startswith(f"{branch} radial spectra")
         )
         assert spectrum_axis.get_legend_handles_labels()[1] == [f"n={n}" for n in orders]
+        magnitude_axis = axes[f"absolute {branch} radial spectra $|I_n^{branch[0]}(q)|$"]
+        assert magnitude_axis.get_xscale() == "log"
+        assert magnitude_axis.get_yscale() == "log"
 
 
 def test_standard_analyzer_accepts_flat_detector_point_list(tmp_path):

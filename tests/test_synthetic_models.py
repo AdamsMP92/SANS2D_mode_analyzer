@@ -1,6 +1,7 @@
 import numpy as np
 
 from synthetic_models import (
+    add_heteroskedastic_gaussian_noise,
     add_white_noise,
     create_detector_grid,
     generate_modal_detector_data,
@@ -22,6 +23,33 @@ def test_synthetic_model_building_blocks_are_reproducible():
     np.testing.assert_allclose(noisy_a, noisy_b)
     assert sigma_a == sigma_b
     assert np.count_nonzero(np.isfinite(image)) == np.count_nonzero(inside)
+
+
+def test_white_noise_preserves_a_nan_detector_mask():
+    signal = np.array([[np.nan, -2.0], [1.0, np.nan]])
+    noisy, noise_sigma = add_white_noise(signal, relative_noise=0.1, seed=5)
+
+    np.testing.assert_array_equal(np.isnan(noisy), np.isnan(signal))
+    assert noise_sigma == 0.2
+
+
+def test_heteroskedastic_noise_uses_the_uncertainty_map_and_preserves_mask():
+    signal = np.array([[np.nan, 2.0], [-1.0, 0.5]])
+    uncertainty = np.array([[np.nan, 0.1], [0.2, 0.4]])
+    first = add_heteroskedastic_gaussian_noise(signal, uncertainty, seed=12)
+    second = add_heteroskedastic_gaussian_noise(signal, uncertainty, seed=12)
+
+    np.testing.assert_array_equal(np.isnan(first), np.isnan(signal))
+    np.testing.assert_array_equal(first, second)
+
+
+def test_heteroskedastic_noise_rejects_invalid_selected_uncertainties():
+    signal = np.array([1.0, np.nan])
+
+    for invalid in (0.0, -0.1, np.nan):
+        uncertainty = np.array([invalid, np.nan])
+        with np.testing.assert_raises(ValueError):
+            add_heteroskedastic_gaussian_noise(signal, uncertainty)
 
 
 def test_random_mode_coefficients_match_indices_and_seed():
@@ -78,3 +106,24 @@ def test_random_modal_detector_wrapper_is_reproducible():
 
     for first_array, second_array in zip(first, second):
         np.testing.assert_array_equal(first_array, second_array)
+
+
+def test_random_modal_detector_wrapper_can_return_generating_model():
+    result = generate_random_modal_detector_data(
+        q_min=0.2,
+        q_max=1.0,
+        n_max=4,
+        m_max=2,
+        n_coeffs=5,
+        angular_parity="odd",
+        number_of_pixels=31,
+        index_seed=2,
+        coefficient_seed=3,
+        return_model=True,
+    )
+    q_z, q_y, intensity, indices, coefficients = result
+
+    assert q_z.shape == q_y.shape == intensity.shape == (31, 31)
+    assert indices.shape == (5, 2)
+    assert coefficients.shape == (5,)
+    assert np.all(np.abs(indices[:, 0]) % 2 == 1)
