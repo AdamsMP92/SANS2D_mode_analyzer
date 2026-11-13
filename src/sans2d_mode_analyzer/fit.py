@@ -39,6 +39,7 @@ class LinearFitResult:
     covariance_scaled_by_residual: bool
     rank: int
     singular_values: NDArray[np.float64]
+    radial_measure_exponent: float
 
     def predict(
         self,
@@ -49,7 +50,14 @@ class LinearFitResult:
         q_max: float,
     ) -> NDArray[np.float64]:
         """Evaluate the fitted expansion at new annulus coordinates."""
-        matrix = design_matrix(q, theta, self.indices, q_min=q_min, q_max=q_max)
+        matrix = design_matrix(
+            q,
+            theta,
+            self.indices,
+            q_min=q_min,
+            q_max=q_max,
+            radial_measure_exponent=self.radial_measure_exponent,
+        )
         return np.asarray(matrix @ self.coefficients, dtype=float)
 
 
@@ -61,12 +69,15 @@ def fit_mse(
     *,
     q_min: float,
     q_max: float,
+    radial_measure_exponent: float = 1.0,
     rcond: float | None = None,
 ) -> LinearFitResult:
     """Fit exactly the supplied modes by minimizing the unweighted MSE.
 
     ``q``, ``theta``, and ``values`` may be one- or multi-dimensional but must
     broadcast to a common shape.  No modes are added implicitly.
+    ``radial_measure_exponent`` selects the radial basis normalization but does
+    not infer quadrature weights from an arbitrary sample list.
     """
     return _fit_linear(
         q,
@@ -75,6 +86,7 @@ def fit_mse(
         indices,
         q_min=q_min,
         q_max=q_max,
+        radial_measure_exponent=radial_measure_exponent,
         whitening=None,
         measurement_uncertainty=None,
         absolute_uncertainty=False,
@@ -91,6 +103,7 @@ def fit_wls(
     *,
     q_min: float,
     q_max: float,
+    radial_measure_exponent: float = 1.0,
     sample_weight: ArrayLike | None = None,
     absolute_uncertainty: bool = True,
     rcond: float | None = None,
@@ -107,6 +120,9 @@ def fit_wls(
     fractional annulus coverage can therefore be passed directly as the
     sample weight.  Nonpositive uncertainties and weights are rejected rather
     than silently clipped.
+    ``radial_measure_exponent`` selects the matching radial basis; callers
+    working below :func:`standard_analyzer` supply any desired quadrature
+    factor explicitly through ``sample_weight``.
 
     With ``absolute_uncertainty=True``, ``uncertainty`` specifies the actual
     independent measurement standard deviations. The covariance propagates
@@ -145,6 +161,7 @@ def fit_wls(
         indices,
         q_min=q_min,
         q_max=q_max,
+        radial_measure_exponent=radial_measure_exponent,
         whitening=whitening,
         measurement_uncertainty=uncertainty_array,
         absolute_uncertainty=absolute_uncertainty,
@@ -160,6 +177,7 @@ def fit_design_matrix(
     uncertainty: ArrayLike | None = None,
     sample_weight: ArrayLike | None = None,
     absolute_uncertainty: bool = True,
+    radial_measure_exponent: float = 1.0,
     rcond: float | None = None,
 ) -> LinearFitResult:
     """Fit a precomputed, possibly pixel-integrated design matrix.
@@ -172,6 +190,14 @@ def fit_design_matrix(
     residual-scaled relative precision model as :func:`fit_wls`.
     """
     modes = validate_indices(indices)
+    radial_measure_exponent = float(radial_measure_exponent)
+    if (
+        not np.isfinite(radial_measure_exponent)
+        or radial_measure_exponent <= -1.0
+    ):
+        raise ValueError(
+            "radial_measure_exponent must be finite and greater than -1"
+        )
     value_array = np.asarray(values, dtype=float)
     matrix_array = np.asarray(matrix, dtype=float)
     expected_shape = value_array.shape + (len(modes),)
@@ -199,6 +225,7 @@ def fit_design_matrix(
             ).reshape(-1)
         ),
         absolute_uncertainty=fitted_with_absolute_errors,
+        radial_measure_exponent=radial_measure_exponent,
         rcond=rcond,
     )
 
@@ -211,6 +238,7 @@ def _fit_linear(
     *,
     q_min: float,
     q_max: float,
+    radial_measure_exponent: float,
     whitening: ArrayLike | None,
     measurement_uncertainty: ArrayLike | None,
     absolute_uncertainty: bool,
@@ -225,7 +253,12 @@ def _fit_linear(
     if not np.all(np.isfinite(value_array)):
         raise ValueError("values must contain only finite values")
     matrix = design_matrix(
-        q_array, theta_array, modes, q_min=q_min, q_max=q_max
+        q_array,
+        theta_array,
+        modes,
+        q_min=q_min,
+        q_max=q_max,
+        radial_measure_exponent=radial_measure_exponent,
     ).reshape(-1, len(modes))
     target = value_array.reshape(-1)
     if whitening is None:
@@ -250,6 +283,7 @@ def _fit_linear(
             ).reshape(-1)
         ),
         absolute_uncertainty=absolute_uncertainty,
+        radial_measure_exponent=radial_measure_exponent,
         rcond=rcond,
     )
 
@@ -282,6 +316,7 @@ def _solve_design_matrix(
     *,
     measurement_uncertainty,
     absolute_uncertainty,
+    radial_measure_exponent,
     rcond,
 ):
     weighted_matrix = whitening_flat[:, None] * matrix
@@ -336,4 +371,5 @@ def _solve_design_matrix(
         covariance_scaled_by_residual=not absolute_uncertainty,
         rank=int(rank),
         singular_values=np.asarray(singular_values, dtype=float),
+        radial_measure_exponent=float(radial_measure_exponent),
     )

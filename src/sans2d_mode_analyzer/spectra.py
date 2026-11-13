@@ -20,6 +20,7 @@ class AngularRadialSpectra:
     orders: NDArray[np.int64]
     cosine: NDArray[np.float64]
     sine: NDArray[np.float64]
+    radial_measure_exponent: float
     cosine_uncertainty: NDArray[np.float64] | None = None
     sine_uncertainty: NDArray[np.float64] | None = None
 
@@ -31,9 +32,10 @@ def angular_radial_spectra(
     *,
     q_min: float,
     q_max: float,
+    radial_measure_exponent: float = 1.0,
     coefficient_covariance: ArrayLike | None = None,
 ) -> AngularRadialSpectra:
-    r"""Evaluate :math:`I_n^{c,s}(q)=\sum_m c_{\pm n,m}R_m(q)`."""
+    r"""Evaluate :math:`I_n^{c,s}(q)=\sum_m c_{\pm n,m}R_m^{(s)}(q)`."""
     modes = validate_indices(indices)
     values = np.asarray(coefficients, dtype=float)
     if values.ndim != 1 or values.size != len(modes):
@@ -51,7 +53,13 @@ def angular_radial_spectra(
     cosine = np.zeros((n_max + 1, q_values.size))
     sine = np.zeros((n_max + 1, q_values.size))
     radial_cache = {
-        m: radial_mode(m, q_values, q_min=q_min, q_max=q_max)
+        m: radial_mode(
+            m,
+            q_values,
+            q_min=q_min,
+            q_max=q_max,
+            radial_measure_exponent=radial_measure_exponent,
+        )
         for _, m in modes
     }
 
@@ -95,6 +103,7 @@ def angular_radial_spectra(
         orders=np.arange(n_max + 1, dtype=np.int64),
         cosine=cosine,
         sine=sine,
+        radial_measure_exponent=float(radial_measure_exponent),
         cosine_uncertainty=cosine_uncertainty,
         sine_uncertainty=sine_uncertainty,
     )

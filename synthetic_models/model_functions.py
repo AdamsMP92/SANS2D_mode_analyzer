@@ -41,9 +41,9 @@ def put_on_detector_grid(values, inside):
     return image
 
 
-def powder_average_affine_noise_signal(q_min, q_max, radius):
+def powder_average_affine_noise_signal(q_min, q_max, radius, relative_noise=0.03):
     q_z, q_y, q, theta, inside = create_detector_grid(q_min, q_max)
     signal = sphere_sans_signal(q[inside], theta[inside], radius)
-    noisy_signal, noise_sigma = add_white_noise(signal)
+    noisy_signal, noise_sigma = add_white_noise(signal, relative_noise=relative_noise)
     noisy_image = put_on_detector_grid(noisy_signal, inside)
     return q_z, q_y, noisy_image

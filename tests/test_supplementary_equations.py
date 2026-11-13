@@ -157,16 +157,12 @@ def test_overview_uses_common_angular_power_scale_distinct_from_product_mode_sca
     np.testing.assert_allclose(mode_map[0, 0], 1.0, rtol=2e-13)
     np.testing.assert_allclose(mode_map[0, 2], 0.25/4.0, rtol=2e-13)
     for branch in ("cosine", "sine"):
-        axis = axes[f"{branch} angular block tests"]
-        even_line, odd_line, threshold_line = axis.lines
+        axis = axes[f"{branch} angular block statistics"]
+        even_line, odd_line = axis.lines
         statistic = getattr(analysis.block_tests, f"{branch}_statistic")
-        critical = getattr(analysis.block_tests, f"{branch}_critical_value")
         for line in (even_line, odd_line):
             order = np.asarray(line.get_xdata(), dtype=int)
             np.testing.assert_allclose(line.get_ydata(), statistic[order])
-        order = np.asarray(threshold_line.get_xdata(), dtype=int)
-        np.testing.assert_allclose(threshold_line.get_ydata(), critical[order])
-        assert threshold_line.get_label().startswith("nominal")
         assert not any(
             collection.get_label().startswith("Holm")
             for collection in axis.collections

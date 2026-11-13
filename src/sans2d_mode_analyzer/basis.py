@@ -11,14 +11,58 @@ from numpy.typing import ArrayLike, NDArray
 from .indices import ModeIndex, validate_indices
 
 
-def _annulus(q_min: float, q_max: float) -> tuple[float, float, float]:
+def _annulus(q_min: float, q_max: float) -> tuple[float, float]:
     lower = float(q_min)
     upper = float(q_max)
     if not np.isfinite(lower) or not np.isfinite(upper):
         raise ValueError("q_min and q_max must be finite")
     if lower < 0.0 or upper <= lower:
         raise ValueError("require 0 <= q_min < q_max")
-    return lower, upper, upper**2 - lower**2
+    return lower, upper
+
+
+def _measure_exponent(value: float) -> float:
+    exponent = float(value)
+    if not np.isfinite(exponent):
+        raise ValueError("radial_measure_exponent must be finite")
+    if exponent <= -1.0:
+        raise ValueError("radial_measure_exponent must be greater than -1")
+    return exponent
+
+
+def radial_measure_weight(
+    q: ArrayLike,
+    *,
+    q_min: float,
+    q_max: float,
+    radial_measure_exponent: float = 1.0,
+) -> NDArray[np.float64]:
+    r"""Return relative detector weights for the measure :math:`q^s\,dq`.
+
+    Equal-area Cartesian detector pixels already sample
+    :math:`q\,dq\,d\theta`.  Multiplication by the returned dimensionless
+    factor changes their radial measure to :math:`q^s\,dq\,d\theta`.  The
+    factor is normalized to have unit area-average on the annulus, so changing
+    ``s`` changes only the relative radial weighting.
+    """
+    lower, upper = _annulus(q_min, q_max)
+    exponent = _measure_exponent(radial_measure_exponent)
+    q_array = np.asarray(q, dtype=float)
+    if not np.all(np.isfinite(q_array)):
+        raise ValueError("q must contain only finite values")
+    tolerance = 32.0 * np.finfo(float).eps * max(1.0, abs(upper))
+    if np.any(q_array < lower - tolerance) or np.any(q_array > upper + tolerance):
+        raise ValueError("q values must lie inside [q_min, q_max]")
+    if exponent < 1.0 and np.any(q_array <= 0.0):
+        raise ValueError(
+            "positive q values are required when radial_measure_exponent < 1"
+        )
+    default_integral = 0.5 * (upper**2 - lower**2)
+    measure_integral = (
+        upper ** (exponent + 1.0) - lower ** (exponent + 1.0)
+    ) / (exponent + 1.0)
+    scale = default_integral / measure_integral
+    return np.asarray(scale * q_array ** (exponent - 1.0), dtype=float)
 
 
 def _integer(value: int, name: str, *, non_negative: bool = False) -> int:
@@ -36,24 +80,36 @@ def radial_mode(
     *,
     q_min: float,
     q_max: float,
+    radial_measure_exponent: float = 1.0,
 ) -> NDArray[np.float64]:
     r"""Evaluate the normalized radial mode :math:`R_m(q)`.
 
-    The Legendre coordinate is affine in :math:`q^2`, so the modes satisfy
-    :math:`\int_{q_\min}^{q_\max} R_m R_k q\,dq = \delta_{mk}`.
+    For ``radial_measure_exponent=s``, the Legendre coordinate is affine in
+    :math:`q^{s+1}` and the modes satisfy
+    :math:`\int_{q_\min}^{q_\max} R_m R_k q^s\,dq = \delta_{mk}`.
+    The default ``s=1`` recovers the detector-plane measure :math:`q\,dq`.
     """
     degree = _integer(m, "m", non_negative=True)
-    lower, upper, delta = _annulus(q_min, q_max)
+    lower, upper = _annulus(q_min, q_max)
+    exponent = _measure_exponent(radial_measure_exponent)
+    delta = upper ** (exponent + 1.0) - lower ** (exponent + 1.0)
     q_array = np.asarray(q, dtype=float)
     if not np.all(np.isfinite(q_array)):
         raise ValueError("q must contain only finite values")
     tolerance = 32.0 * np.finfo(float).eps * max(1.0, abs(upper))
     if np.any(q_array < lower - tolerance) or np.any(q_array > upper + tolerance):
         raise ValueError("q values must lie inside [q_min, q_max]")
-    x = (2.0 * q_array**2 - upper**2 - lower**2) / delta
+    transformed_q = q_array ** (exponent + 1.0)
+    x = (
+        2.0 * transformed_q
+        - upper ** (exponent + 1.0)
+        - lower ** (exponent + 1.0)
+    ) / delta
     coefficients = np.zeros(degree + 1)
     coefficients[-1] = 1.0
-    normalization = np.sqrt(2.0 * (2 * degree + 1) / delta)
+    normalization = np.sqrt(
+        (2 * degree + 1) * (exponent + 1.0) / delta
+    )
     return np.asarray(normalization * legval(x, coefficients), dtype=float)
 
 
@@ -81,6 +137,7 @@ def basis_function(
     *,
     q_min: float,
     q_max: float,
+    radial_measure_exponent: float = 1.0,
 ) -> NDArray[np.float64]:
     """Evaluate one product mode selected by the two-dimensional index ``(n,m)``."""
     mode = validate_indices([index])[0]
@@ -88,9 +145,13 @@ def basis_function(
         np.asarray(q, dtype=float), np.asarray(theta, dtype=float)
     )
     n, m = mode
-    return radial_mode(m, q_array, q_min=q_min, q_max=q_max) * angular_mode(
-        n, theta_array
-    )
+    return radial_mode(
+        m,
+        q_array,
+        q_min=q_min,
+        q_max=q_max,
+        radial_measure_exponent=radial_measure_exponent,
+    ) * angular_mode(n, theta_array)
 
 
 def design_matrix(
@@ -100,6 +161,7 @@ def design_matrix(
     *,
     q_min: float,
     q_max: float,
+    radial_measure_exponent: float = 1.0,
 ) -> NDArray[np.float64]:
     """Evaluate arbitrary modes and return an array with shape ``q.shape + (K,)``."""
     modes = validate_indices(indices)
@@ -107,7 +169,14 @@ def design_matrix(
         np.asarray(q, dtype=float), np.asarray(theta, dtype=float)
     )
     columns = [
-        basis_function(mode, q_array, theta_array, q_min=q_min, q_max=q_max)
+        basis_function(
+            mode,
+            q_array,
+            theta_array,
+            q_min=q_min,
+            q_max=q_max,
+            radial_measure_exponent=radial_measure_exponent,
+        )
         for mode in modes
     ]
     return np.stack(columns, axis=-1)
@@ -121,6 +190,7 @@ def evaluate_expansion(
     *,
     q_min: float,
     q_max: float,
+    radial_measure_exponent: float = 1.0,
 ) -> NDArray[np.float64]:
     """Evaluate a selected modal sum, including the single-mode case."""
     modes = validate_indices(indices)
@@ -129,5 +199,12 @@ def evaluate_expansion(
         raise ValueError("coefficients must be a one-dimensional array matching indices")
     if not np.all(np.isfinite(coefficient_array)):
         raise ValueError("coefficients must contain only finite values")
-    matrix = design_matrix(q, theta, modes, q_min=q_min, q_max=q_max)
+    matrix = design_matrix(
+        q,
+        theta,
+        modes,
+        q_min=q_min,
+        q_max=q_max,
+        radial_measure_exponent=radial_measure_exponent,
+    )
     return np.asarray(matrix @ coefficient_array, dtype=float)

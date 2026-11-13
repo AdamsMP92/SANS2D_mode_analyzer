@@ -42,7 +42,6 @@ def export_standard_analysis_figure(
     *,
     q_range: tuple[float, float],
     basis_label: str,
-    block_test_confidence: float,
     log_intensity_colorbar: bool,
     output_path: str | Path,
 ) -> Path:
@@ -54,6 +53,7 @@ def export_standard_analysis_figure(
     fit = result.fit
     powers = result.powers
     spectra = result.spectra
+    reference = result.reference
     block_tests = result.block_tests
     input_image = result.input_image
     fit_image = result.fit_image
@@ -74,7 +74,9 @@ def export_standard_analysis_figure(
     cosine_map_axis = figure.add_subplot(grid[3, 0:3])
     sine_map_axis = figure.add_subplot(grid[3, 3:6])
     cosine_spectra_axis = figure.add_subplot(grid[4, 0:3])
-    sine_spectra_axis = figure.add_subplot(grid[4, 3:6])
+    sine_spectra_axis = figure.add_subplot(
+        grid[4, 3:6], sharey=cosine_spectra_axis
+    )
 
     common_min = float(np.nanmin(input_image))
     common_max = float(np.nanmax(input_image))
@@ -198,13 +200,33 @@ def export_standard_analysis_figure(
     figure.colorbar(input_plot, ax=map_axes[:2], label=intensity_colorbar_label)
     figure.colorbar(residual_plot, ax=map_axes[2], label="residual")
 
-    power_scale = float(max(np.max(powers.cosine), np.max(powers.sine)))
+    power_candidates = [np.max(powers.cosine), np.max(powers.sine)]
+    if reference is not None:
+        power_candidates.extend(
+            [np.max(reference.powers.cosine), np.max(reference.powers.sine)]
+        )
+    power_scale = float(max(power_candidates))
     cosine_fraction = powers.cosine / power_scale
     sine_fraction = powers.sine / power_scale
     assert powers.cosine_uncertainty is not None
     assert powers.sine_uncertainty is not None
     cosine_uncertainty = powers.cosine_uncertainty / power_scale
     sine_uncertainty = powers.sine_uncertainty / power_scale
+    reference_cosine_fraction = None
+    reference_sine_fraction = None
+    reference_cosine_uncertainty = None
+    reference_sine_uncertainty = None
+    if reference is not None:
+        assert reference.powers.cosine_uncertainty is not None
+        assert reference.powers.sine_uncertainty is not None
+        reference_cosine_fraction = reference.powers.cosine / power_scale
+        reference_sine_fraction = reference.powers.sine / power_scale
+        reference_cosine_uncertainty = (
+            reference.powers.cosine_uncertainty / power_scale
+        )
+        reference_sine_uncertainty = (
+            reference.powers.sine_uncertainty / power_scale
+        )
     positive = np.concatenate(
         [cosine_fraction[cosine_fraction > 0.0], sine_fraction[sine_fraction > 0.0]]
     )
@@ -213,6 +235,24 @@ def export_standard_analysis_figure(
         float(np.max(cosine_fraction + cosine_uncertainty)),
         float(np.max(sine_fraction + sine_uncertainty)),
     ) * 1.5
+    if reference is not None:
+        positive = np.concatenate(
+            [
+                positive,
+                reference_cosine_fraction[reference_cosine_fraction > 0.0],
+                reference_sine_fraction[reference_sine_fraction > 0.0],
+            ]
+        )
+        lower_limit = max(float(np.min(positive)) / 3.0, 1.0e-14)
+        upper_limit = max(
+            upper_limit,
+            float(
+                np.max(reference_cosine_fraction + reference_cosine_uncertainty)
+            )
+            * 1.5,
+            float(np.max(reference_sine_fraction + reference_sine_uncertainty))
+            * 1.5,
+        )
     cosine_lower_error = np.minimum(
         cosine_uncertainty, np.maximum(cosine_fraction - lower_limit, 0.0)
     )
@@ -228,13 +268,15 @@ def export_standard_analysis_figure(
     sine_orders = np.asarray(
         sorted({abs(n) for n, _ in fit.indices if n < 0}), dtype=np.int64
     )
-    for axis, orders, fraction, lower_error, power_error, color, title in [
+    for axis, orders, fraction, lower_error, power_error, reference_fraction, reference_error, color, title in [
         (
             cosine_axis,
             cosine_orders,
             cosine_fraction,
             cosine_lower_error,
             cosine_uncertainty,
+            reference_cosine_fraction,
+            reference_cosine_uncertainty,
             "tab:blue",
             "cosine angular powers",
         ),
@@ -244,6 +286,8 @@ def export_standard_analysis_figure(
             sine_fraction,
             sine_lower_error,
             sine_uncertainty,
+            reference_sine_fraction,
+            reference_sine_uncertainty,
             "tab:orange",
             "sine angular powers",
         ),
@@ -267,6 +311,22 @@ def export_standard_analysis_figure(
                 capsize=3,
                 label=label,
             )
+        if reference is not None and orders.size:
+            reference_lower_error = np.minimum(
+                reference_error,
+                np.maximum(reference_fraction - lower_limit, 0.0),
+            )
+            axis.errorbar(
+                orders,
+                reference_fraction[orders],
+                yerr=np.vstack(
+                    [reference_lower_error[orders], reference_error[orders]]
+                ),
+                fmt="x",
+                color="tab:red",
+                capsize=3,
+                label="piecewise-linear reference",
+            )
         axis.set_title(title)
         axis.set_xlabel("angular order n")
         axis.set_ylabel(r"relative power $P_n^2/P_{\max}^2$")
@@ -277,24 +337,22 @@ def export_standard_analysis_figure(
         if orders.size:
             axis.legend(fontsize=8)
 
-    for axis, orders, statistic, critical, valid, color, title in [
+    for axis, orders, statistic, valid, color, title in [
         (
             cosine_test_axis,
             cosine_orders,
             block_tests.cosine_statistic,
-            block_tests.cosine_critical_value,
             block_tests.cosine_degrees_of_freedom > 0,
             "tab:blue",
-            "cosine angular block tests",
+            "cosine angular block statistics",
         ),
         (
             sine_test_axis,
             sine_orders,
             block_tests.sine_statistic,
-            block_tests.sine_critical_value,
             block_tests.sine_degrees_of_freedom > 0,
             "tab:orange",
-            "sine angular block tests",
+            "sine angular block statistics",
         ),
     ]:
         even = valid & (block_tests.orders % 2 == 0)
@@ -316,13 +374,6 @@ def export_standard_analysis_figure(
                 markeredgecolor="0.55",
                 label="odd orders",
             )
-        axis.plot(
-            block_tests.orders[valid],
-            critical[valid],
-            "--",
-            color="tab:red",
-            label=f"nominal {block_test_confidence:.0%} threshold",
-        )
         axis.set_title(title)
         axis.set_xlabel("angular order n")
         axis.set_ylabel(r"$T_n$")
@@ -386,7 +437,10 @@ def export_standard_analysis_figure(
     for order in cosine_orders:
         color = colors(int(order) % 10)
         cosine_spectra_axis.plot(
-            spectra.q, spectra.cosine[order], label=f"n={order}", color=color
+            spectra.q,
+            spectra.cosine[order],
+            label=(f"n={order}" if reference is None else f"n={order} polynomial"),
+            color=color,
         )
         cosine_spectra_axis.fill_between(
             spectra.q,
@@ -396,10 +450,31 @@ def export_standard_analysis_figure(
             alpha=0.18,
             linewidth=0.0,
         )
+        if reference is not None:
+            cosine_spectra_axis.plot(
+                reference.spectra.q,
+                reference.spectra.cosine[order],
+                "--",
+                label=f"n={order} polygonal",
+                color=color,
+            )
+            cosine_spectra_axis.fill_between(
+                reference.spectra.q,
+                reference.spectra.cosine[order]
+                - reference.spectra.cosine_uncertainty[order],
+                reference.spectra.cosine[order]
+                + reference.spectra.cosine_uncertainty[order],
+                color=color,
+                alpha=0.08,
+                linewidth=0.0,
+            )
     for order in sine_orders:
         color = colors(int(order) % 10)
         sine_spectra_axis.plot(
-            spectra.q, spectra.sine[order], label=f"n={order}", color=color
+            spectra.q,
+            spectra.sine[order],
+            label=(f"n={order}" if reference is None else f"n={order} polynomial"),
+            color=color,
         )
         sine_spectra_axis.fill_between(
             spectra.q,
@@ -409,6 +484,24 @@ def export_standard_analysis_figure(
             alpha=0.18,
             linewidth=0.0,
         )
+        if reference is not None:
+            sine_spectra_axis.plot(
+                reference.spectra.q,
+                reference.spectra.sine[order],
+                "--",
+                label=f"n={order} polygonal",
+                color=color,
+            )
+            sine_spectra_axis.fill_between(
+                reference.spectra.q,
+                reference.spectra.sine[order]
+                - reference.spectra.sine_uncertainty[order],
+                reference.spectra.sine[order]
+                + reference.spectra.sine_uncertainty[order],
+                color=color,
+                alpha=0.08,
+                linewidth=0.0,
+            )
     for axis, title in zip(
         [cosine_spectra_axis, sine_spectra_axis],
         [r"cosine radial spectra $I_n^c(q)$", r"sine radial spectra $I_n^s(q)$"],
@@ -431,16 +524,23 @@ def export_standard_analysis_figure(
             + f"   delta q=({result.center_shift_q_z:.3e}, "
             + f"{result.center_shift_q_y:.3e})"
         )
+    reference_summary = ""
+    if reference is not None:
+        reference_summary = (
+            f"\npiecewise-linear reference: {reference.knots.size - 1} radial intervals"
+        )
     figure.suptitle(
         "Mode analysis "
         f"({basis_label}: {len(fit.indices)} total, "
-        f"{angular_mode_count} angular modes)\n"
+        f"{angular_mode_count} angular modes; "
+        f"radial measure q^{result.radial_measure_exponent:g} dq)\n"
         + f"even power fraction: {result.parity_fractions.even:.6f}   "
         + f"odd power fraction: {result.parity_fractions.odd:.6f}\n"
-        + r"fit parity $\langle[I(q,\theta)-I(q,\theta+\pi)]^2\rangle_A$: "
+        + r"fit parity $\langle[I(q,\theta)-I(q,\theta+\pi)]^2\rangle$: "
         + f"{result.parity_mismatch.mean_square:.3e}   "
         + f"relative RMS: {result.parity_mismatch.normalized_rms:.4f}"
-        + centering_summary,
+        + centering_summary
+        + reference_summary,
         fontsize=12,
     )
 

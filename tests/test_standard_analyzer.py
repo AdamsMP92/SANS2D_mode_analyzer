@@ -76,6 +76,41 @@ def test_standard_analyzer_can_skip_figure_export(tmp_path):
     assert result.fit_image.shape == q_z.shape
 
 
+def test_standard_analyzer_radial_measure_exponent_changes_q_weighting():
+    q_min, q_max = 0.2, 1.0
+    axis = np.linspace(-q_max, q_max, 81)
+    q_z, q_y = np.meshgrid(axis, axis)
+    q = np.hypot(q_z, q_y)
+    intensity = np.where((q >= q_min) & (q <= q_max), q, np.nan)
+
+    default = standard_analyzer(
+        q_z,
+        q_y,
+        intensity,
+        q_range=(q_min, q_max),
+        mode_limits=(0, 0),
+        export_figure=False,
+    )
+    high_q_weighted = standard_analyzer(
+        q_z,
+        q_y,
+        intensity,
+        q_range=(q_min, q_max),
+        mode_limits=(0, 0),
+        radial_measure_exponent=3.0,
+        export_figure=False,
+    )
+
+    assert default.radial_measure_exponent == 1.0
+    assert default.fit.radial_measure_exponent == 1.0
+    assert default.sample_weight_image is None
+    assert high_q_weighted.radial_measure_exponent == 3.0
+    assert high_q_weighted.fit.radial_measure_exponent == 3.0
+    assert high_q_weighted.spectra.radial_measure_exponent == 3.0
+    assert high_q_weighted.sample_weight_image is not None
+    assert np.nanmean(high_q_weighted.fit_image) > np.nanmean(default.fit_image)
+
+
 def test_standard_analyzer_accepts_explicit_sparse_indices(monkeypatch, tmp_path):
     from matplotlib.figure import Figure
 
@@ -123,6 +158,9 @@ def test_standard_analyzer_accepts_explicit_sparse_indices(monkeypatch, tmp_path
     assert axes["sine radial spectra $I_n^s(q)$"].get_legend_handles_labels()[1] == [
         "n=2"
     ]
+    assert axes["cosine radial spectra $I_n^c(q)$"].get_ylim() == axes[
+        "sine radial spectra $I_n^s(q)$"
+    ].get_ylim()
 
 
 def test_standard_analyzer_requires_one_mode_specification(tmp_path):
@@ -213,7 +251,7 @@ def test_standard_analyzer_even_only_refits_and_plots_selected_orders(
             for order in container.lines[0].get_xdata()
         ]
         assert plotted_orders == orders
-        block_axis = axes[f"{branch} angular block tests"]
+        block_axis = axes[f"{branch} angular block statistics"]
         assert "odd orders" not in block_axis.get_legend_handles_labels()[1]
         spectrum_axis = next(
             axis for title, axis in axes.items() if title.startswith(f"{branch} radial spectra")
@@ -294,6 +332,7 @@ def test_standard_analyzer_accepts_uncertainty_and_pixel_integration(tmp_path):
     integrated = pixel_integrated_annulus_design(
         q_z, q_y, result.fit.indices, q_min=q_min, q_max=q_max, subpixels=3,
     )
+    np.testing.assert_allclose(integrated.quadrature_weight, integrated.coverage)
     matrix = integrated.design_matrix[
         result.selected_mask[integrated.selected_mask]
     ]

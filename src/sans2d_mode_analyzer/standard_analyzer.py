@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from .basis import radial_measure_weight
 from .block_test import AngularBlockTests, angular_block_tests
 from .fit import LinearFitResult, fit_design_matrix, fit_mse, fit_wls
 from .indices import even_angular_indices, rectangular_indices, validate_indices
@@ -20,6 +21,15 @@ from .power import (
     angular_mode_powers,
     parity_power_fractions,
     parity_mismatch_measures,
+)
+from .piecewise_linear_basis import (
+    piecewise_linear_indices,
+    piecewise_linear_knots,
+    piecewise_linear_pixel_integrated_design,
+)
+from .piecewise_linear_reference import (
+    PiecewiseLinearReferenceResult,
+    fit_piecewise_linear_reference,
 )
 from .preconditioning import (
     CenterRefinementResult,
@@ -52,6 +62,8 @@ class StandardAnalysisResult:
     beam_centering_refinement: CenterRefinementResult | None
     center_shift_q_z: float
     center_shift_q_y: float
+    radial_measure_exponent: float
+    reference: PiecewiseLinearReferenceResult | None
     output_path: Path | None
 
 
@@ -66,6 +78,7 @@ def standard_analyzer(
     even_only: bool = False,
     uncertainty: ArrayLike | None = None,
     sample_weight: ArrayLike | None = None,
+    radial_measure_exponent: float = 1.0,
     absolute_uncertainty: bool = True,
     beam_centering: bool = False,
     beam_centering_grid_size: int = 129,
@@ -75,6 +88,9 @@ def standard_analyzer(
     pixel_integration_subpixels: int | None = None,
     pixel_integration_chunk_size: int = 512,
     block_test_confidence: float = 0.95,
+    piecewise_linear_reference: bool = False,
+    reference_radial_segments: int = 12,
+    reference_knot_spacing: str = "measure",
     export_figure: bool = True,
     output_path: str | Path = "standard_analysis.png",
 ) -> StandardAnalysisResult:
@@ -89,6 +105,17 @@ def standard_analyzer(
     this shortcut cannot be combined with explicit ``indices``.
     Supplying ``uncertainty`` activates uncertainty-weighted least squares.
     ``sample_weight`` can additionally contain fractional pixel coverage.
+    ``radial_measure_exponent=s`` consistently changes the radial basis and
+    detector-fit measure from the default ``q dq`` (``s=1``) to ``q**s dq``.
+    Relative to equal-area detector pixels this applies the radial fit weight
+    ``q**(s-1)``. Values larger than one emphasize high q; values below one
+    emphasize low q. The exponent must be greater than -1.
+    With ``piecewise_linear_reference=True``, the same selected data and
+    angular modes are fitted a second time using polygonal radial spectra.
+    ``reference_radial_segments`` sets the number of ring intervals and
+    ``reference_knot_spacing`` is either ``'measure'`` or ``'q'``. The
+    alternative spectra and Gram-corrected powers are returned as
+    ``result.reference.spectra`` and ``result.reference.powers``.
     With absolute uncertainties, the supplied pixel errors are propagated
     through this weighted fit; coverage does not alter their noise variance.
     Without absolute uncertainties, the combined weights define a relative
@@ -105,9 +132,10 @@ def standard_analyzer(
     masked but remain included in the numerical fit.
     Holm-adjusted p-values and decisions remain available as numerical
     properties of block_tests, conditional on the chosen noise model.
-    They are not highlighted in the standard overview. The even/odd power
-    comparison remains descriptive; nominal T_n thresholds are model-based
-    references rather than empirical artifact or physical-identification limits.
+    The standard overview shows only the T_n values and does not draw critical
+    thresholds or rejection markers. The even/odd comparison therefore remains
+    descriptive rather than defining an empirical artifact or physical-
+    identification limit.
     Set ``export_figure=False`` to skip all Matplotlib rendering while retaining
     the complete numerical result; ``result.output_path`` is then ``None``.
     """
@@ -117,6 +145,14 @@ def standard_analyzer(
         indices=indices,
         even_only=even_only,
     )
+    radial_measure_exponent = float(radial_measure_exponent)
+    if (
+        not np.isfinite(radial_measure_exponent)
+        or radial_measure_exponent <= -1.0
+    ):
+        raise ValueError(
+            "radial_measure_exponent must be finite and greater than -1"
+        )
 
     q_z, q_y, intensity = np.broadcast_arrays(
         np.asarray(q_z, dtype=float),
@@ -200,6 +236,18 @@ def standard_analyzer(
     effective_weight_array = weight_array
     if pixel_integration_subpixels is None:
         selected &= (q >= q_min) & (q <= q_max)
+        radial_weight_array = np.zeros(intensity.shape, dtype=float)
+        radial_weight_array[selected] = radial_measure_weight(
+            q[selected],
+            q_min=q_min,
+            q_max=q_max,
+            radial_measure_exponent=radial_measure_exponent,
+        )
+        selected &= radial_weight_array > 0.0
+        if radial_measure_exponent != 1.0:
+            effective_weight_array = radial_weight_array
+            if weight_array is not None:
+                effective_weight_array = radial_weight_array * weight_array
     else:
         integrated_design = pixel_integrated_annulus_design(
             q_z,
@@ -207,11 +255,15 @@ def standard_analyzer(
             indices,
             q_min=q_min,
             q_max=q_max,
+            radial_measure_exponent=radial_measure_exponent,
             subpixels=pixel_integration_subpixels,
             chunk_size=pixel_integration_chunk_size,
         )
-        selected &= integrated_design.selected_mask
-        effective_weight_array = integrated_design.coverage.copy()
+        selected &= (
+            integrated_design.selected_mask
+            & (integrated_design.quadrature_weight > 0.0)
+        )
+        effective_weight_array = integrated_design.quadrature_weight.copy()
         if weight_array is not None:
             effective_weight_array *= weight_array
     if not np.any(selected):
@@ -229,6 +281,7 @@ def standard_analyzer(
             ),
             sample_weight=effective_weight_array[selected],
             absolute_uncertainty=absolute_uncertainty,
+            radial_measure_exponent=radial_measure_exponent,
         )
     elif uncertainty_array is None and effective_weight_array is None:
         fit = fit_mse(
@@ -238,6 +291,7 @@ def standard_analyzer(
             indices,
             q_min=q_min,
             q_max=q_max,
+            radial_measure_exponent=radial_measure_exponent,
         )
     else:
         selected_uncertainty = (
@@ -258,6 +312,7 @@ def standard_analyzer(
             selected_uncertainty,
             q_min=q_min,
             q_max=q_max,
+            radial_measure_exponent=radial_measure_exponent,
             sample_weight=selected_weight,
             absolute_uncertainty=(
                 absolute_uncertainty if uncertainty_array is not None else False
@@ -274,6 +329,7 @@ def standard_analyzer(
         fit.indices,
         q_min=q_min,
         q_max=q_max,
+        radial_measure_exponent=radial_measure_exponent,
     )
     block_tests = angular_block_tests(
         fit.coefficients,
@@ -308,8 +364,57 @@ def standard_analyzer(
         fit.indices,
         q_min=q_min,
         q_max=q_max,
+        radial_measure_exponent=radial_measure_exponent,
         coefficient_covariance=fit.coefficient_covariance,
     )
+    reference = None
+    if piecewise_linear_reference:
+        angular_modes = tuple(dict.fromkeys(order for order, _ in indices))
+        reference_knots = piecewise_linear_knots(
+            q_min=q_min,
+            q_max=q_max,
+            radial_segments=reference_radial_segments,
+            radial_measure_exponent=radial_measure_exponent,
+            spacing=reference_knot_spacing,
+        )
+        reference_design = None
+        if pixel_integration_subpixels is not None:
+            reference_indices = piecewise_linear_indices(
+                angular_modes,
+                radial_segments=reference_radial_segments,
+            )
+            integrated_reference = piecewise_linear_pixel_integrated_design(
+                q_z,
+                q_y,
+                reference_indices,
+                knots=reference_knots,
+                radial_measure_exponent=radial_measure_exponent,
+                subpixels=pixel_integration_subpixels,
+                chunk_size=pixel_integration_chunk_size,
+            )
+            reference_valid = selected[integrated_reference.selected_mask]
+            reference_design = integrated_reference.design_matrix[reference_valid]
+        reference = fit_piecewise_linear_reference(
+            q[selected],
+            theta[selected],
+            intensity[selected],
+            angular_modes,
+            knots=reference_knots,
+            radial_measure_exponent=radial_measure_exponent,
+            uncertainty=(
+                None if uncertainty_array is None else uncertainty_array[selected]
+            ),
+            sample_weight=(
+                None
+                if effective_weight_array is None
+                else effective_weight_array[selected]
+            ),
+            absolute_uncertainty=(
+                absolute_uncertainty if uncertainty_array is not None else False
+            ),
+            design_matrix=reference_design,
+            spectrum_q=q_spectrum,
+        )
     path = Path(output_path) if export_figure else None
     result = StandardAnalysisResult(
         fit=fit,
@@ -328,6 +433,8 @@ def standard_analyzer(
         beam_centering_refinement=beam_centering_refinement,
         center_shift_q_z=center_shift_q_z,
         center_shift_q_y=center_shift_q_y,
+        radial_measure_exponent=radial_measure_exponent,
+        reference=reference,
         output_path=path,
     )
     if export_figure:
@@ -339,7 +446,6 @@ def standard_analyzer(
             q_y,
             q_range=(q_min, q_max),
             basis_label=basis_label,
-            block_test_confidence=block_test_confidence,
             log_intensity_colorbar=log_intensity_colorbar,
             output_path=path,
         )

@@ -82,36 +82,40 @@ Here $q_{\min}\geq0$; when the origin is included, its angular coordinate
 has no effect on continuous integrals because it has zero area.
 
 \begin{samepage}
-The inner product is defined with the detector-plane area measure,
+For a radial-measure exponent $s>-1$, the inner product is
 \begin{equation}
- \langle f,g\rangle_{\Ann}
+ \langle f,g\rangle_{\Ann,s}
  =\int_{q_{\min}}^{q_{\max}}\int_0^{2\pi}
- f(q,\theta)g(q,\theta)\dd\theta\,q\dd q.
+ f(q,\theta)g(q,\theta)\dd\theta\,q^s\dd q.
  \label{eq:inner-product}
 \end{equation}
 \end{samepage}
-This is a two-dimensional reciprocal-space measure. It differs from both
-an unweighted radial integral $\int I\dd q$ and a three-dimensional
-scattering invariant involving $q^2\dd q$.
+The default $s=1$ is the two-dimensional detector-plane area measure
+$q\dd q\dd\theta$. Other exponents intentionally reweight the radial
+interval; for example, $s>1$ emphasizes larger $q$. The choice is not a
+change of the experimental cross section and should be reported with the
+analysis.
 
 \subsection{Orthonormal expansion and mode indices}
 
 The radial coordinate and radial modes are
 \begin{align}
- x(q)&=\frac{2q^2-q_{\max}^2-q_{\min}^2}{\Delta},
- \qquad q\dd q=\frac{\Delta}{4}\dd x,
+ \Delta_s&=q_{\max}^{s+1}-q_{\min}^{s+1},\nonumber\\
+ x_s(q)&=\frac{2q^{s+1}-q_{\max}^{s+1}-q_{\min}^{s+1}}{\Delta_s},
+ \qquad q^s\dd q=\frac{\Delta_s}{2(s+1)}\dd x_s,
  \label{eq:radial-coordinate}\\
- R_m(q)&=\sqrt{\frac{2(2m+1)}{\Delta}}\,P_m[x(q)],
+ R_m^{(s)}(q)&=\sqrt{\frac{(2m+1)(s+1)}{\Delta_s}}\,P_m[x_s(q)],
  \qquad m=0,1,\ldots,
  \label{eq:radial-modes}
 \end{align}
 where $P_m$ is the Legendre polynomial of degree $m$. Since
 $\int_{-1}^{1}P_m(x)P_l(x)\dd x=2\delta_{ml}/(2m+1)$,
 \begin{equation}
- \int_{q_{\min}}^{q_{\max}}R_m(q)R_l(q)\,q\dd q=\delta_{ml}.
+ \int_{q_{\min}}^{q_{\max}}R_m^{(s)}(q)R_l^{(s)}(q)\,q^s\dd q=\delta_{ml}.
  \label{eq:radial-orthogonality}
 \end{equation}
-The coordinate affine in $q^2$ is essential for this normalization.
+At the default $s=1$, these expressions reduce exactly to the coordinate
+affine in $q^2$ and the normalization used previously.
 
 To distinguish the angular basis from the block statistic $T_n$ below,
 we write the angular functions as $\mathcal{T}_n$:
@@ -130,12 +134,12 @@ Thus the signed index $n$ encodes the trigonometric branch; it is not a
 negative angular frequency of a complex Fourier expansion. The product modes
 and fitted intensity are
 \begin{equation}
- \Phi_{nm}(q,\theta)=R_m(q)\mathcal{T}_n(\theta),\qquad
+ \Phi_{nm}^{(s)}(q,\theta)=R_m^{(s)}(q)\mathcal{T}_n(\theta),\qquad
  \widehat I(q,\theta)=\sum_{(n,m)\in\Modes}
- \widehat c_{nm}\Phi_{nm}(q,\theta),
+ \widehat c_{nm}\Phi_{nm}^{(s)}(q,\theta),
  \label{eq:expansion}
 \end{equation}
-with $\langle\Phi_{nm},\Phi_{n'm'}\rangle_{\Ann}
+with $\langle\Phi_{nm}^{(s)},\Phi_{n'm'}^{(s)}\rangle_{\Ann,s}
 =\delta_{nn'}\delta_{mm'}$. By default, the standard analyzer uses the full
 rectangle $|n|\leq n_{\max}$ and $0\leq m\leq m_{\max}$, containing
 $K=(2n_{\max}+1)(m_{\max}+1)$ product modes. With \texttt{even\_only=True},
@@ -147,7 +151,7 @@ are understood as zero in subsequent sums.
 For a continuous, unweighted orthogonal projection of a square-integrable
 function, the coefficients would be
 \begin{equation}
- c_{nm}^{\mathrm{proj}}=\langle I,\Phi_{nm}\rangle_{\Ann}.
+ c_{nm}^{\mathrm{proj}}=\langle I,\Phi_{nm}^{(s)}\rangle_{\Ann,s}.
  \label{eq:projection}
 \end{equation}
 The implemented fit instead estimates them jointly from the available
@@ -185,6 +189,20 @@ design matrix is rejected. For full column rank, the formal solution is
  \qquad \nu=N-K.
  \label{eq:solution}
 \end{equation}
+For equal-area Cartesian detector pixels, selecting exponent $s$ in the
+standard analyzer also multiplies the fit weights by
+\begin{equation}
+ \rho_s(q)=
+ \frac{(q_{\max}^2-q_{\min}^2)/2}
+ {[q_{\max}^{s+1}-q_{\min}^{s+1}]/(s+1)}q^{s-1}.
+ \label{eq:radial-fit-weight}
+\end{equation}
+The constant normalizes the area-average of $\rho_s$ to one and has no effect
+on the fitted coefficients. Thus the basis orthonormality and detector
+residual metric use the same $q^s\dd q\dd\theta$ measure. Supplied
+uncertainty weights, sample weights, and fractional coverage multiply this
+factor. Arbitrary point lists do not by themselves define a quadrature
+measure; lower-level callers must supply the appropriate sample weights.
 The reported \texttt{mse} always equals
 $N^{-1}\sum_p(y_p-\widehat y_p)^2$, regardless of the fitting metric.
 The weighted sum of squares is $Q(\widehat{\bm c})$; the field
@@ -255,8 +273,9 @@ discrepancies under that model, rather than experimental counting noise.
 For any coefficient vector in the selected orthonormal basis, including a
 detector-fitted vector, continuous orthonormality gives the exact identity
 \begin{equation}
- \mathcal{P}=\|\widehat I\|_{\Ann}^2
- =\int_{\Ann}\widehat I^2\dd^2q
+ \mathcal{P}=\|\widehat I\|_{\Ann,s}^2
+ =\int_{q_{\min}}^{q_{\max}}\int_0^{2\pi}
+  \widehat I^2q^s\dd\theta\dd q
  =\sum_{(n,m)\in\Modes}\widehat c_{nm}^{\,2}.
  \label{eq:parseval}
 \end{equation}
@@ -280,11 +299,14 @@ The separate angular powers are
 \end{align}
 These powers quantify squared-intensity content on the annulus. They are
 neither integrated scattering cross sections nor magnetic energies, and
-they discard coefficient signs. For example, since $\Phi_{00}=1/\sqrt A$,
-the linear area integral is $\int_{\Ann}\widehat I\dd^2q
-=\sqrt A\,\widehat c_{00}$ when the constant mode is present.
+they discard coefficient signs. For example, with
+$M_s=2\pi\Delta_s/(s+1)$ and $\Phi_{00}^{(s)}=1/\sqrt{M_s}$,
+the linear integral in the selected measure is
+$\int\!\!\int\widehat Iq^s\dd\theta\dd q
+=\sqrt{M_s}\,\widehat c_{00}$ when the constant mode is present.
 If $q$ has units $Q$ and intensity has units $U$, then $R_m$ has units
-$Q^{-1}$, $c_{nm}$ has units $UQ$, and $\mathcal{P}$ has units $U^2Q^2$.
+$Q^{-(s+1)/2}$, $c_{nm}$ has units $UQ^{(s+1)/2}$, and $\mathcal{P}$
+has units $U^2Q^{s+1}$.
 Comparisons of absolute modal powers therefore require consistent
 coordinate units, intensity normalization, and annulus limits.
 
@@ -324,9 +346,9 @@ individual product-mode power as their common scale.
 Keeping each angular order separate while summing its radial modes gives
 the spectra returned by \texttt{angular\_radial\_spectra}:
 \begin{equation}
- I_n^c(q)=\sum_m\widehat c_{n,m}R_m(q),\quad n\geq0,
+ I_n^c(q)=\sum_m\widehat c_{n,m}R_m^{(s)}(q),\quad n\geq0,
  \qquad
- I_n^s(q)=\sum_m\widehat c_{-n,m}R_m(q),\quad n\geq1.
+ I_n^s(q)=\sum_m\widehat c_{-n,m}R_m^{(s)}(q),\quad n\geq1.
  \label{eq:radial-spectra}
 \end{equation}
 The stored sine spectrum at order zero is identically zero. These are
@@ -352,15 +374,15 @@ retain radial sign changes and relative harmonic amplitudes that cannot be
 recovered from angular powers alone. Radial orthonormality connects the
 two descriptions exactly:
 \begin{equation}
- \int_{q_{\min}}^{q_{\max}}[I_n^b(q)]^2q\dd q=\mathcal{P}_n^b.
+ \int_{q_{\min}}^{q_{\max}}[I_n^b(q)]^2q^s\dd q=\mathcal{P}_n^b.
  \label{eq:spectrum-power}
 \end{equation}
 In the unnormalized Fourier convention just specified, the same identities
 read
 \begin{align*}
- \mathcal{P}_0^c&=2\pi\int_{q_{\min}}^{q_{\max}}a_0(q)^2q\dd q,\\
- \mathcal{P}_n^c&=\pi\int_{q_{\min}}^{q_{\max}}a_n(q)^2q\dd q,\qquad
- \mathcal{P}_n^s=\pi\int_{q_{\min}}^{q_{\max}}b_n(q)^2q\dd q
+ \mathcal{P}_0^c&=2\pi\int_{q_{\min}}^{q_{\max}}a_0(q)^2q^s\dd q,\\
+ \mathcal{P}_n^c&=\pi\int_{q_{\min}}^{q_{\max}}a_n(q)^2q^s\dd q,\qquad
+ \mathcal{P}_n^s=\pi\int_{q_{\min}}^{q_{\max}}b_n(q)^2q^s\dd q
  \quad(n\geq1).
 \end{align*}
 These factors are already included in the orthonormal coefficient
@@ -380,6 +402,61 @@ The standard analyzer evaluates the spectra at 300 equally spaced $q$
 values and displays pointwise one-standard-deviation bands from the first
 expression. This grid samples the fitted function; it introduces no new
 independent observations. Simultaneous confidence bands are not calculated.
+
+\subsection{Piecewise-linear radial reference analysis}
+
+As a reference that does not use global radial polynomials, the same angular
+modes can be combined with local linear hat functions. Let
+\begin{equation}
+ q_{\min}=q_0<q_1<\cdots<q_K=q_{\max}
+\end{equation}
+define $K$ nonoverlapping radial intervals. The nodal functions $B_k(q)$ obey
+$B_k(q_l)=\delta_{kl}$, are linear on each adjacent interval, and vanish
+elsewhere. The reference expansion is
+\begin{equation}
+ \widehat I_{\mathrm{PL}}(q,\theta)
+ =\sum_n\sum_{k=0}^{K}a_{n,k}B_k(q)\mathcal{T}_n(\theta),
+ \qquad
+ I_{n,\mathrm{PL}}(q)=\sum_{k=0}^{K}a_{n,k}B_k(q).
+ \label{eq:piecewise-expansion}
+\end{equation}
+Hence $a_{n,k}=I_{n,\mathrm{PL}}(q_k)$ is directly the fitted polygonal
+spectrum at a knot. The knots may be uniform in $q$ or equally spaced in the
+selected radial measure,
+\begin{equation}
+ q_k=\left[q_{\min}^{s+1}
+ +\frac{k}{K}\left(q_{\max}^{s+1}-q_{\min}^{s+1}\right)\right]^{1/(s+1)}.
+ \label{eq:piecewise-knots}
+\end{equation}
+The fit uses the same admitted pixels, angular orders, uncertainties,
+quadrature weights, and optional pixel integration as the polynomial branch.
+No smoothing penalty is applied.
+
+The hat functions overlap and are not orthogonal. Their coefficients must
+therefore not be assigned powers by summing $a_{n,k}^2$. Instead define
+\begin{equation}
+ (G_s)_{kl}=\int_{q_{\min}}^{q_{\max}}B_k(q)B_l(q)q^s\dd q.
+ \label{eq:piecewise-gram}
+\end{equation}
+The matrix $G_s$ is symmetric and tridiagonal. The reference angular power is
+\begin{equation}
+ \mathcal{P}_{n,\mathrm{PL}}^b
+ =(\bm a_n^b)^{\trans}G_s\bm a_n^b,
+ \label{eq:piecewise-power}
+\end{equation}
+which uses the same continuous norm as Eq.~\eqref{eq:angular-power}. For a
+coefficient covariance $C_n^b$, its plug-in Gaussian uncertainty is
+\begin{equation}
+ \delta\mathcal{P}_{n,\mathrm{PL}}^b
+ =\left[
+ 2\tr(G_sC_n^bG_sC_n^b)
+ +4(\bm a_n^b)^{\trans}G_sC_n^bG_s\bm a_n^b
+ \right]^{1/2}.
+ \label{eq:piecewise-power-error}
+\end{equation}
+Agreement between the polynomial and polygonal $I_n(q)$ and angular powers
+tests whether an inferred radial feature is robust to the chosen radial
+representation.
 
 \subsection{Angular block statistics \texorpdfstring{$T_n$}{Tn}}
 
@@ -424,7 +501,7 @@ weights. When the common variance scale is estimated from the same fit
 residuals, the reference is $T_n^b/r_n^b\sim F_{r_n^b,\nu}$ under the
 relative precision model $\Sigma=\gamma W^{-1}$. This F reference is not
 calibrated for arbitrary geometric weights with a different noise model.
-Thus the plotted critical value at confidence $\beta$ is
+Thus the critical value returned at confidence $\beta$ is
 \begin{equation}
  T_{n,\mathrm{crit}}^b=
  \begin{cases}
@@ -434,10 +511,9 @@ Thus the plotted critical value at confidence $\beta$ is
  \label{eq:block-threshold}
 \end{equation}
 The default is $\beta=0.95$; upper-tail probabilities are also returned.
-The code plots $T_n^b$ itself against Eq.~\eqref{eq:block-threshold}.
-In the residual-scaled case it evaluates the upper tail of the
-$F_{r_n^b,\nu}$ distribution at $T_n^b/r_n^b$; the plotted statistic is
-not divided by $r_n^b$. The standard analyzer selects this case when
+In the residual-scaled case the code evaluates the upper tail of the
+$F_{r_n^b,\nu}$ distribution at $T_n^b/r_n^b$; the stored statistic itself
+is not divided by $r_n^b$. The standard analyzer selects this case when
 \texttt{covariance\_scaled\_by\_residual} is true and passes the fit's
 residual degrees of freedom to the block-test function.
 Missing blocks have rank zero and undefined statistics, including the
@@ -493,12 +569,11 @@ a small model-based p-value. Calibration simulations check the
 implementation for their generating models; they do not establish that
 those assumptions hold for the measured data.
 
-The standard overview does not highlight Holm decisions. Its dashed
-$T_n^b$ curves retain the explicitly nominal, model-based thresholds of
-Eq.~\eqref{eq:block-threshold}. The numerical Holm properties remain
-available separately; they do not determine a physical identification
-criterion, modify the modal powers and spectra, or select and refit a
-reduced model.
+The standard overview shows the $T_n^b$ values but deliberately omits
+critical-value curves and rejection markers. The nominal critical values,
+raw probabilities, and numerical Holm properties remain available
+separately; they do not determine a physical identification criterion,
+modify the modal powers and spectra, or select and refit a reduced model.
 
 \subsection{Parity, mirror symmetry, and signal centering}
 
@@ -516,13 +591,14 @@ The package reports
 provided $\mathcal{P}>0$. For the fitted expansion, Parseval gives
 \begin{align}
  D_{\mathrm{par}}^2
- &=\frac{1}{A}\int_{\Ann}
- [\widehat I(q,\theta)-\widehat I(q,\theta+\pi)]^2\dd^2q
- =\frac{4\mathcal{P}f_{\mathrm{odd}}}{A},
+ &=\frac{1}{M_s}\int_{q_{\min}}^{q_{\max}}\int_0^{2\pi}
+ [\widehat I(q,\theta)-\widehat I(q,\theta+\pi)]^2
+ q^s\dd\theta\dd q
+ =\frac{4\mathcal{P}f_{\mathrm{odd}}}{M_s},
  \label{eq:parity-mismatch}\\
  d_{\mathrm{par}}
- &=\frac{\|\widehat I(q,\theta)-\widehat I(q,\theta+\pi)\|_{\Ann}}
-          {\|\widehat I\|_{\Ann}}
+ &=\frac{\|\widehat I(q,\theta)-\widehat I(q,\theta+\pi)\|_{\Ann,s}}
+          {\|\widehat I\|_{\Ann,s}}
  =2\sqrt{f_{\mathrm{odd}}}.
  \label{eq:relative-parity}
 \end{align}
@@ -614,7 +690,15 @@ accounts for pixel shape and orientation. There are two distinct uses:
 \texttt{fractional\_annulus\_weights} supplies $f_p$ as a fit weight, while
 \texttt{pixel\_integrated\_annulus\_design} also replaces the design row by
 $\overline X_{pj}$. The latter admits any pixel with $f_p>0$ and multiplies
-an existing sample weight by $f_p$. The default standard analyzer instead
+an existing sample weight by $f_p$ for $s=1$. For general $s$, its returned
+quadrature weight is
+\begin{equation}
+ w_{p,s}\simeq\frac{1}{s_{\mathrm{sub}}^2}
+ \sum_{\ell\in P_p\cap\Ann}\rho_s(q_\ell),
+ \label{eq:pixel-measure-weight}
+\end{equation}
+which combines fractional coverage and the radial factor in
+Eq.~\eqref{eq:radial-fit-weight}. The default standard analyzer instead
 uses center-point selection and evaluation; supplying only external
 fractional weights retains that center-point annulus selection. One must
 therefore enable internal pixel integration to include pixels whose centers
@@ -688,8 +772,15 @@ The definitions above correspond to \path{basis.py} and \path{indices.py}
 \path{power.py} (powers and parity), \path{spectra.py} (radial spectra), and
 \path{block_test.py} (angular block tests). All source files lie under
 \path{src/sans2d_mode_analyzer/}. Explicit detector operations reside in
-\path{preconditioning.py}. The \path{standard_analyzer} combines sample
+\path{preconditioning.py}. The optional polygonal reference is implemented in
+\texttt{piecewise\_linear\_}\allowbreak\texttt{basis.py} and
+\texttt{piecewise\_linear\_}\allowbreak\texttt{reference.py}.
+The \path{standard_analyzer} combines sample
 selection, fitting over the selected modes, and all numerical diagnostics.
+Its optional \texttt{radial\_measure\_}\allowbreak\texttt{exponent} applies
+the same exponent to
+the radial basis, detector-fit quadrature weights, Parseval diagnostics,
+parity normalization, and reported radial spectra; the default is $s=1$.
 It returns the fit, detector-space arrays, powers, block tests, parity
 measures, and radial spectra independently of figure generation. The optional
 overview is rendered separately by \path{figure_backend.py}; setting

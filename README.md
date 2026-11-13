@@ -8,22 +8,26 @@ q_{\min} \le q \le q_{\max}, \qquad 0 \le \theta < 2\pi.
 \]
 
 The radial modes are normalized Legendre polynomials in a coordinate affine in
-`q**2`, and are therefore orthonormal for the detector-plane measure `q dq`.
-The angular modes form a real orthonormal Fourier basis.
+`q**(s + 1)`, where `s = radial_measure_exponent`. They are therefore
+orthonormal for the radial measure `q**s dq`. The default `s=1` is the
+detector-plane measure `q dq`. The angular modes form a real orthonormal
+Fourier basis.
 
 More explicitly,
 
 ```text
-x(q) = (2 q^2 - q_max^2 - q_min^2) / (q_max^2 - q_min^2)
-R_m(q) = sqrt(2 (2m + 1) / (q_max^2 - q_min^2)) P_m(x(q))
+x_s(q) = (2 q^(s+1) - q_max^(s+1) - q_min^(s+1))
+         / (q_max^(s+1) - q_min^(s+1))
+R_m^(s)(q) = sqrt((2m + 1)(s + 1)
+                  / (q_max^(s+1) - q_min^(s+1))) P_m(x_s(q))
 T_0(theta) = 1 / sqrt(2 pi)
 T_n(theta) = cos(n theta) / sqrt(pi)       for n > 0
 T_n(theta) = sin(abs(n) theta) / sqrt(pi)  for n < 0
 Phi_(n,m)(q, theta) = R_m(q) T_n(theta).
 ```
 
-Consequently, the product modes are orthonormal for `q dq dtheta` over the
-chosen annulus. By default the fitted coefficients minimize
+Consequently, the product modes are orthonormal for `q**s dq dtheta` over the
+chosen annulus. By default (`s=1`) the fitted coefficients minimize
 `mean((data - design_matrix @ coefficients)**2)` over exactly the selected
 columns. Experimental uncertainties and fractional detector-pixel weights can
 instead activate weighted least squares as described below.
@@ -146,6 +150,82 @@ Set `even_only=True` to fit only even angular orders up to `n_max`, with
 all radial orders through `m_max`. The overview title marks this choice.
 The resulting fit has antipodal symmetry by construction. For an arbitrary
 symmetry or sparse basis, construct the desired index list explicitly instead.
+
+The optional `radial_measure_exponent` changes how the radial interval is
+weighted:
+
+```python
+result = standard_analyzer(
+    q_z,
+    q_y,
+    intensity,
+    q_range=(q_min, q_max),
+    mode_limits=(8, 4),
+    radial_measure_exponent=2.0,
+)
+```
+
+For equal-area Cartesian detector pixels, the standard analyzer combines the
+corresponding radial basis with the relative residual weight
+`q**(radial_measure_exponent - 1)`. Thus values above one emphasize the
+high-`q` part of the annulus and values below one emphasize low `q`; the
+default value `1.0` leaves the established analysis unchanged. Explicit
+measurement uncertainties, user-supplied `sample_weight`, and fractional
+pixel coverage are multiplied with this radial weight. The exponent must be
+greater than `-1`. If the annulus includes `q=0`, exponents below one require
+special cell integration and are therefore rejected by the point-sampled
+weight helper.
+
+The lower-level basis and fit functions accept the same
+`radial_measure_exponent`. Since arbitrary point lists do not imply a sampling
+measure, low-level callers who want the same residual weighting should pass
+`radial_measure_weight(...)` as the `sample_weight` of `fit_wls`.
+Changing the exponent changes the orthonormal norm and hence the numerical
+coefficients and modal powers. Compare those quantities across analyses only
+when the exponent, annulus, and coordinate units are the same; reconstructed
+intensities remain directly interpretable in the original intensity units.
+
+### Piecewise-linear radial reference
+
+The standard analyzer can optionally repeat the fit with the same angular
+modes but replace the global radial polynomials by local linear hat functions:
+
+```python
+result = standard_analyzer(
+    q_z,
+    q_y,
+    intensity,
+    q_range=(q_min, q_max),
+    mode_limits=(8, 4),
+    radial_measure_exponent=1.0,
+    piecewise_linear_reference=True,
+    reference_radial_segments=12,
+    reference_knot_spacing="measure",
+)
+
+polynomial_spectra = result.spectra
+polynomial_powers = result.powers
+polygonal_spectra = result.reference.spectra
+polygonal_powers = result.reference.powers
+```
+
+`reference_radial_segments=K` creates `K` non-overlapping radial intervals
+and `K + 1` knot amplitudes. With `reference_knot_spacing="measure"`, the
+knots delimit equal intervals in `q**radial_measure_exponent dq`; use
+`"q"` for uniform q increments. The reference fit uses the same selected
+pixels, angular orders, uncertainties, effective weights, radial measure, and
+optional subpixel integration as the principal analysis.
+
+The polygonal coefficients are the fitted values of each `I_n(q)` at the
+knots. Since neighboring hat functions overlap, their squared coefficients
+are not additive powers. The implementation instead returns the exact
+Gram-corrected angular power `a_n.T @ G @ a_n`, where
+`G_ij = integral B_i(q) B_j(q) q**s dq`. Consequently, the reference powers
+and the orthonormal-basis Parseval powers use the same continuous norm.
+When figure export is enabled, the overview overlays the polygonal spectra as
+dashed curves and the corresponding powers as red cross markers. The
+individual `(n,m)` power maps remain specific to the orthonormal polynomial
+basis because individual overlapping hat coefficients are not additive powers.
 
 The returned result exposes the plotted radial coefficient
 functions and their propagated uncertainties directly as `result.spectra`.
@@ -327,10 +407,10 @@ The calibration simulations check the implementation in specified Gaussian
 models; they do not establish that these assumptions hold for reduced
 experimental data or that systematic errors are represented.
 
-The T_n panels retain explicitly labeled nominal, uncorrected reference
-thresholds under the assumed noise model. They do not identify physical
-causes or estimate the frequency of experimental artifacts. The standard
-overview contains no Holm rejection markers.
+The T_n panels show the block statistics without critical-value curves or
+rejection markers. Nominal critical values, raw p-values, and Holm-adjusted
+p-values remain available numerically through `result.block_tests`, but the
+standard overview deliberately leaves the even/odd comparison descriptive.
 
 For an observable expected to be parity even, a broad background of odd
 angular powers can serve as an empirical reference for noise, asymmetry, and

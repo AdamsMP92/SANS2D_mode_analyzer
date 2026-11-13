@@ -5,6 +5,7 @@ from .basis import (
     basis_function,
     design_matrix,
     evaluate_expansion,
+    radial_measure_weight,
     radial_mode,
 )
 from .block_test import AngularBlockTests, angular_block_tests
@@ -23,6 +24,22 @@ from .power import (
     angular_mode_powers,
     parity_power_fractions,
     parity_mismatch_measures,
+)
+from .piecewise_linear_basis import (
+    PiecewiseLinearIntegratedDesign,
+    piecewise_linear_design_matrix,
+    piecewise_linear_gram_matrix,
+    piecewise_linear_indices,
+    piecewise_linear_knots,
+    piecewise_linear_pixel_integrated_design,
+    piecewise_linear_radial_basis,
+)
+from .piecewise_linear_reference import (
+    PiecewiseLinearFitResult,
+    PiecewiseLinearReferenceResult,
+    fit_piecewise_linear_reference,
+    piecewise_linear_angular_powers,
+    piecewise_linear_angular_spectra,
 )
 from .preconditioning import (
     AffineDetectorGeometry,
@@ -66,6 +83,9 @@ __all__ = [
     "PointCloudCenteringResult",
     "ParityPowerFractions",
     "ParityMismatchMeasures",
+    "PiecewiseLinearFitResult",
+    "PiecewiseLinearIntegratedDesign",
+    "PiecewiseLinearReferenceResult",
     "StandardAnalysisResult",
     "SymmetryDiagnostic",
     "affine_detector_geometry",
@@ -85,11 +105,21 @@ __all__ = [
     "fit_mse",
     "fit_design_matrix",
     "fit_wls",
+    "fit_piecewise_linear_reference",
     "fractional_annulus_weights",
     "load_ascii_detector_data",
     "load_ill_nexus",
     "mask_symmetry_diagnostic",
     "pixel_integrated_annulus_design",
+    "piecewise_linear_angular_powers",
+    "piecewise_linear_angular_spectra",
+    "piecewise_linear_design_matrix",
+    "piecewise_linear_gram_matrix",
+    "piecewise_linear_indices",
+    "piecewise_linear_knots",
+    "piecewise_linear_pixel_integrated_design",
+    "piecewise_linear_radial_basis",
+    "radial_measure_weight",
     "radial_mode",
     "rectangular_indices",
     "parity_power_fractions",

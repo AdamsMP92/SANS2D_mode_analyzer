@@ -10,7 +10,7 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 from scipy.optimize import minimize
 
-from .basis import design_matrix
+from .basis import design_matrix, radial_measure_weight
 from .indices import ModeIndex, validate_indices
 from .io import DetectorData
 
@@ -67,6 +67,7 @@ class PixelIntegratedAnnulus:
 
     selected_mask: NDArray[np.bool_]
     coverage: NDArray[np.float64]
+    quadrature_weight: NDArray[np.float64]
     indices: tuple[ModeIndex, ...]
     design_matrix: NDArray[np.float64]
 
@@ -341,6 +342,7 @@ def pixel_integrated_annulus_design(
     *,
     q_min: float,
     q_max: float,
+    radial_measure_exponent: float = 1.0,
     subpixels: int = 7,
     chunk_size: int = 512,
 ) -> PixelIntegratedAnnulus:
@@ -348,7 +350,9 @@ def pixel_integrated_annulus_design(
 
     Only selected pixels are stored in the returned design matrix.  Its row
     order is ``array[selected_mask]`` in NumPy's usual C order.  Chunking keeps
-    the temporary matrix bounded even for a large mode set.
+    the temporary matrix bounded even for a large mode set. ``coverage`` is
+    the geometric annulus fraction, whereas ``quadrature_weight`` additionally
+    applies the selected radial measure relative to equal-area detector pixels.
     """
     lower, upper = _annulus_limits(q_min, q_max)
     modes = validate_indices(indices)
@@ -376,10 +380,19 @@ def pixel_integrated_annulus_design(
             modes,
             q_min=lower,
             q_max=upper,
+            radial_measure_exponent=radial_measure_exponent,
+        )
+        quadrature_weight = np.zeros_like(radius)
+        quadrature_weight[selected] = radial_measure_weight(
+            radius[selected],
+            q_min=lower,
+            q_max=upper,
+            radial_measure_exponent=radial_measure_exponent,
         )
         return PixelIntegratedAnnulus(
             selected_mask=selected,
             coverage=selected.astype(float),
+            quadrature_weight=quadrature_weight,
             indices=modes,
             design_matrix=matrix,
         )
@@ -402,6 +415,7 @@ def pixel_integrated_annulus_design(
     selected = coverage > 0.0
     flat_positions = np.flatnonzero(selected)
     integrated = np.zeros((flat_positions.size, len(modes)), dtype=float)
+    quadrature_weight = np.zeros(q_z_array.shape, dtype=float)
     offsets = (np.arange(number, dtype=float) + 0.5) / number - 0.5
     flat_q_z = q_z_array.ravel()
     flat_q_y = q_y_array.ravel()
@@ -410,6 +424,7 @@ def pixel_integrated_annulus_design(
         stop = min(start + chunk, flat_positions.size)
         positions = flat_positions[start:stop]
         accumulated = np.zeros((positions.size, len(modes)), dtype=float)
+        accumulated_weight = np.zeros(positions.size, dtype=float)
         counts = np.zeros(positions.size, dtype=int)
         for row_offset in offsets:
             for column_offset in offsets:
@@ -421,21 +436,31 @@ def pixel_integrated_annulus_design(
                 sample_q = np.hypot(sample_q_z, sample_q_y)
                 inside = (sample_q >= lower) & (sample_q <= upper)
                 if np.any(inside):
+                    subpixel_weight = radial_measure_weight(
+                        sample_q[inside],
+                        q_min=lower,
+                        q_max=upper,
+                        radial_measure_exponent=radial_measure_exponent,
+                    )
                     accumulated[inside] += design_matrix(
                         sample_q[inside],
                         np.arctan2(sample_q_y[inside], sample_q_z[inside]),
                         modes,
                         q_min=lower,
                         q_max=upper,
+                        radial_measure_exponent=radial_measure_exponent,
                     )
+                    accumulated_weight[inside] += subpixel_weight
                     counts[inside] += 1
         if np.any(counts == 0):
             raise RuntimeError("selected annulus pixel received no subpixel samples")
         integrated[start:stop] = accumulated / counts[:, None]
+        quadrature_weight.ravel()[positions] = accumulated_weight / number**2
 
     return PixelIntegratedAnnulus(
         selected_mask=selected,
         coverage=coverage,
+        quadrature_weight=quadrature_weight,
         indices=modes,
         design_matrix=integrated,
     )

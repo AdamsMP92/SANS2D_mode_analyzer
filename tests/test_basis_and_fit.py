@@ -11,6 +11,7 @@ from sans2d_mode_analyzer import (
     fit_wls,
     parity_power_fractions,
     parity_mismatch_measures,
+    radial_measure_weight,
     rectangular_indices,
 )
 
@@ -37,6 +38,50 @@ def test_continuous_basis_is_numerically_orthonormal():
     weights *= 2.0 * np.pi / angular_nodes.size
     gram = matrix.T @ (weights[:, None] * matrix)
     np.testing.assert_allclose(gram, np.eye(len(indices)), atol=2e-13)
+
+
+@pytest.mark.parametrize("exponent", [0.0, 2.0, 3.5])
+def test_continuous_basis_is_orthonormal_for_general_radial_measure(exponent):
+    nodes, weights = np.polynomial.legendre.leggauss(64)
+    angular_nodes = np.linspace(0.0, 2.0 * np.pi, 128, endpoint=False)
+    transformed = 0.5 * (
+        (Q_MAX ** (exponent + 1.0) - Q_MIN ** (exponent + 1.0)) * nodes
+        + Q_MAX ** (exponent + 1.0)
+        + Q_MIN ** (exponent + 1.0)
+    )
+    q = transformed ** (1.0 / (exponent + 1.0))
+    q_grid, theta_grid = np.meshgrid(q, angular_nodes, indexing="ij")
+    indices = rectangular_indices(n_max=2, m_max=2)
+    matrix = design_matrix(
+        q_grid,
+        theta_grid,
+        indices,
+        q_min=Q_MIN,
+        q_max=Q_MAX,
+        radial_measure_exponent=exponent,
+    ).reshape(-1, len(indices))
+    radial_weights = weights * (
+        Q_MAX ** (exponent + 1.0) - Q_MIN ** (exponent + 1.0)
+    ) / (2.0 * (exponent + 1.0))
+    quadrature = np.repeat(radial_weights, angular_nodes.size)
+    quadrature *= 2.0 * np.pi / angular_nodes.size
+    gram = matrix.T @ (quadrature[:, None] * matrix)
+    np.testing.assert_allclose(gram, np.eye(len(indices)), atol=3e-13)
+
+
+def test_radial_measure_weight_preserves_default_and_changes_relative_q_weight():
+    q = np.array([Q_MIN, 0.5 * (Q_MIN + Q_MAX), Q_MAX])
+    np.testing.assert_allclose(
+        radial_measure_weight(q, q_min=Q_MIN, q_max=Q_MAX),
+        np.ones_like(q),
+    )
+    higher_q_weight = radial_measure_weight(
+        q,
+        q_min=Q_MIN,
+        q_max=Q_MAX,
+        radial_measure_exponent=3.0,
+    )
+    assert np.all(np.diff(higher_q_weight) > 0.0)
 
 
 def test_single_mode_expansion_matches_basis_function():
@@ -82,6 +127,37 @@ def test_mse_fit_recovers_arbitrary_selected_modes_on_2d_grid():
     np.testing.assert_allclose(result.coefficients, coefficients, atol=2e-13)
     np.testing.assert_allclose(result.fitted_values, values, atol=2e-12)
     assert result.mse < 1e-24
+
+
+def test_fit_result_preserves_radial_measure_for_prediction():
+    q = np.linspace(Q_MIN, Q_MAX, 30)
+    theta = np.linspace(0.0, 2.0 * np.pi, 30, endpoint=False)
+    indices = [(0, 0), (2, 1)]
+    coefficients = np.array([2.0, -0.4])
+    values = evaluate_expansion(
+        q,
+        theta,
+        coefficients,
+        indices,
+        q_min=Q_MIN,
+        q_max=Q_MAX,
+        radial_measure_exponent=2.0,
+    )
+    result = fit_mse(
+        q,
+        theta,
+        values,
+        indices,
+        q_min=Q_MIN,
+        q_max=Q_MAX,
+        radial_measure_exponent=2.0,
+    )
+    assert result.radial_measure_exponent == 2.0
+    np.testing.assert_allclose(
+        result.predict(q, theta, q_min=Q_MIN, q_max=Q_MAX),
+        values,
+        atol=1e-13,
+    )
 
 
 def test_wls_fit_uses_uncertainty_and_fractional_sample_weight():
@@ -193,3 +269,17 @@ def test_parity_mismatch_is_four_times_the_odd_parseval_power():
         mismatch.normalized_rms,
         np.sqrt(mismatch.normalized_mean_square),
     )
+
+
+def test_parity_mismatch_uses_selected_radial_measure():
+    mismatch = parity_mismatch_measures(
+        [2.0, 1.0],
+        [(0, 0), (1, 0)],
+        q_min=Q_MIN,
+        q_max=Q_MAX,
+        radial_measure_exponent=2.0,
+    )
+    expected_measure = 2.0 * np.pi * (Q_MAX**3 - Q_MIN**3) / 3.0
+    np.testing.assert_allclose(mismatch.measure, expected_measure)
+    np.testing.assert_allclose(mismatch.mean_square * mismatch.measure, 4.0)
+    assert mismatch.radial_measure_exponent == 2.0

@@ -49,3 +49,40 @@ def test_angular_radial_spectrum_uncertainty_propagates_covariance():
     expected = np.sqrt(0.04 * radial_0**2 + 0.09 * radial_1**2)
     np.testing.assert_allclose(spectra.cosine_uncertainty[0], expected)
     np.testing.assert_allclose(spectra.sine_uncertainty, 0.0)
+
+
+def test_angular_radial_spectra_use_selected_radial_measure_exponent():
+    q_min = 0.1
+    q_max = 1.0
+    q = np.linspace(q_min, q_max, 20)
+    exponent = 2.5
+    covariance = np.diag([0.04, 0.09])
+    spectra = angular_radial_spectra(
+        q,
+        coefficients=[3.0, 4.0],
+        indices=[(2, 0), (2, 1)],
+        q_min=q_min,
+        q_max=q_max,
+        radial_measure_exponent=exponent,
+        coefficient_covariance=covariance,
+    )
+    radial_0 = radial_mode(
+        0,
+        q,
+        q_min=q_min,
+        q_max=q_max,
+        radial_measure_exponent=exponent,
+    )
+    radial_1 = radial_mode(
+        1,
+        q,
+        q_min=q_min,
+        q_max=q_max,
+        radial_measure_exponent=exponent,
+    )
+    np.testing.assert_allclose(spectra.cosine[2], 3.0 * radial_0 + 4.0 * radial_1)
+    np.testing.assert_allclose(
+        spectra.cosine_uncertainty[2],
+        np.sqrt(0.04 * radial_0**2 + 0.09 * radial_1**2),
+    )
+    assert spectra.radial_measure_exponent == exponent

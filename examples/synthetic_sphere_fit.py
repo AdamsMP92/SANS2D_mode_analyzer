@@ -21,7 +21,7 @@ x_min = 0.5
 x_max = 10.0
 q_range = (x_min / radius, x_max / radius)
 q_min, q_max = q_range
-q_z, q_y, noisy_image = powder_average_affine_noise_signal(q_min, q_max, radius)
+q_z, q_y, noisy_image = powder_average_affine_noise_signal(q_min, q_max, radius, relative_noise=0.01)
 
 # Fit a modest full rectangular basis and write one diagnostic overview.
 mode_limits = (4, 10)
@@ -35,10 +35,10 @@ standard_analyzer(
 )
 
 
- 
+exponent = 1.0
 indices = angular_mode_indices(
-    angular_modes=[0, 2],
-    m_max=14,
+    angular_modes=[-2, -1, 0, 1, 2, 3],
+    m_max=35,
 )
 
 standard_analyzer(
@@ -47,5 +47,9 @@ standard_analyzer(
     noisy_image,
     q_range=q_range,
     indices=indices,
+    radial_measure_exponent=exponent,
+    piecewise_linear_reference=True,
+    reference_radial_segments=35,
+    reference_knot_spacing="q",
     output_path=output_directory / "synthetic_sphere_fit2.png",
 )

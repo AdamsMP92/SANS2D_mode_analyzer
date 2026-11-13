@@ -41,9 +41,11 @@ class ParityPowerFractions:
 
 @dataclass(frozen=True)
 class ParityMismatchMeasures:
-    """Fit-based area-averaged and scale-free parity mismatch."""
+    """Fit-based measure-averaged and scale-free parity mismatch."""
 
     area: float
+    measure: float
+    radial_measure_exponent: float
     mean_square: float
     rms: float
     normalized_mean_square: float
@@ -139,6 +141,7 @@ def parity_mismatch_measures(
     *,
     q_min: float,
     q_max: float,
+    radial_measure_exponent: float = 1.0,
 ) -> ParityMismatchMeasures:
     r"""Evaluate the fitted parity mismatch analytically by Parseval's identity.
 
@@ -150,11 +153,11 @@ def parity_mismatch_measures(
        \int_{\mathcal A}[I(q,\theta)-I(q,\theta+\pi)]^2\,d^2q
        =4\sum_{|n|\ \mathrm{odd},m}c_{nm}^2.
 
-    ``mean_square`` is the user's area-normalized quantity and retains units
-    of intensity squared. ``normalized_mean_square`` divides once more by
-    :math:`\int_{\mathcal A}I^2d^2q`; its square root is a dimensionless
-    relative RMS mismatch. All values refer to the truncated fitted expansion,
-    not directly paired raw detector pixels.
+    ``mean_square`` is normalized by the selected annular measure and retains
+    units of intensity squared. ``normalized_mean_square`` divides once more
+    by the fitted signal integral in the same measure; its square root is a
+    dimensionless relative RMS mismatch. All values refer to the truncated
+    fitted expansion, not directly paired raw detector pixels.
     """
     lower = float(q_min)
     upper = float(q_max)
@@ -162,13 +165,24 @@ def parity_mismatch_measures(
         raise ValueError("q_min and q_max must be finite")
     if lower < 0.0 or upper <= lower:
         raise ValueError("require 0 <= q_min < q_max")
+    exponent = float(radial_measure_exponent)
+    if not np.isfinite(exponent) or exponent <= -1.0:
+        raise ValueError("radial_measure_exponent must be finite and greater than -1")
     fractions = parity_power_fractions(coefficients, indices)
     area = float(np.pi * (upper**2 - lower**2))
+    measure = float(
+        2.0
+        * np.pi
+        * (upper ** (exponent + 1.0) - lower ** (exponent + 1.0))
+        / (exponent + 1.0)
+    )
     integrated_mismatch = 4.0 * fractions.odd * fractions.total_power
-    mean_square = integrated_mismatch / area
+    mean_square = integrated_mismatch / measure
     normalized_mean_square = integrated_mismatch / fractions.total_power
     return ParityMismatchMeasures(
         area=area,
+        measure=measure,
+        radial_measure_exponent=exponent,
         mean_square=float(mean_square),
         rms=float(np.sqrt(mean_square)),
         normalized_mean_square=float(normalized_mean_square),
