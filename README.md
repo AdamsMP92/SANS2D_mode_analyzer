@@ -106,6 +106,14 @@ q_z, q_y, intensity = generate_modal_detector_data(
 Values outside the selected annulus are `NaN`. The three returned arrays can
 be passed directly to `standard_analyzer`; the detector convention remains
 `(q_z, q_y)` throughout the package.
+For centering verification, `center_shift=(delta_q_z, delta_q_y)` places the
+physical centre of the synthetic annulus at a prescribed detector coordinate
+while leaving the returned coordinates in the laboratory frame.  The
+noise-free Stage-5 example in
+[`verification_examples/stage_5/example_1.py`](verification_examples/stage_5/example_1.py)
+uses this option to show how an imposed translation creates odd angular modes
+and how `beam_centering=True` removes that geometrical contribution under the
+assumed antipodal symmetry.
 Set `return_model=True` on `generate_random_modal_detector_data` to append the
 generating `(n, m)` index array and coefficient vector to these three detector
 arrays. This is intended for coefficient-recovery and regression tests.
@@ -151,9 +159,9 @@ fit, residual, angular powers, block statistics, mode-power maps, and radial
 spectra. The final row repeats the magnitudes of the radial spectra on common
 log-log axes. The complete beginner-oriented script is in
 [`examples/synthetic_sphere_fit.py`](examples/synthetic_sphere_fit.py).
-The detector construction, sphere model, white-noise and supplied-map
-heteroskedastic Gaussian-noise addition, and insertion onto the masked
-detector grid are separate short functions in
+The detector construction, sphere model, white-noise, supplied-map
+heteroskedastic Gaussian-noise, low-rank correlated Gaussian-noise addition,
+and insertion onto the masked detector grid are separate short functions in
 [`synthetic_models/model_functions.py`](synthetic_models/model_functions.py).
 
 The repository also contains the supplied experimental NeXus files under

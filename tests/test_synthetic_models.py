@@ -1,6 +1,7 @@
 import numpy as np
 
 from synthetic_models import (
+    add_correlated_gaussian_noise,
     add_heteroskedastic_gaussian_noise,
     add_white_noise,
     create_detector_grid,
@@ -52,6 +53,30 @@ def test_heteroskedastic_noise_rejects_invalid_selected_uncertainties():
             add_heteroskedastic_gaussian_noise(signal, uncertainty)
 
 
+def test_correlated_noise_returns_reproducible_marginal_uncertainties():
+    signal = np.array([[np.nan, 2.0], [-1.0, 0.5]])
+    independent = np.array([[np.nan, 0.2], [0.2, 0.2]])
+    patterns = np.array(
+        [
+            [[np.nan, 0.1], [0.1, 0.1]],
+            [[np.nan, -0.3], [0.0, 0.3]],
+        ]
+    )
+
+    first, first_marginal = add_correlated_gaussian_noise(
+        signal, independent, patterns, seed=19
+    )
+    second, second_marginal = add_correlated_gaussian_noise(
+        signal, independent, patterns, seed=19
+    )
+
+    np.testing.assert_array_equal(first, second)
+    np.testing.assert_array_equal(first_marginal, second_marginal)
+    np.testing.assert_array_equal(np.isnan(first), np.isnan(signal))
+    expected = np.sqrt(independent**2 + np.sum(patterns**2, axis=0))
+    np.testing.assert_allclose(first_marginal, expected, equal_nan=True)
+
+
 def test_random_mode_coefficients_match_indices_and_seed():
     indices = [(0, 0), (2, 1), (-3, 2)]
     first = random_mode_coefficients(indices, seed=11)
@@ -87,6 +112,40 @@ def test_modal_detector_data_are_directly_recovered_by_standard_analyzer():
     assert np.any(np.isnan(intensity))
     np.testing.assert_allclose(result.fit.coefficients, coefficients, atol=1e-12)
     assert result.fit.mse < 1.0e-24
+
+
+def test_modal_detector_data_can_be_generated_about_a_shifted_center():
+    from sans2d_mode_analyzer import evaluate_expansion
+
+    q_min, q_max = 0.2, 1.0
+    center_shift = (0.04, -0.03)
+    indices = [(0, 0), (2, 1)]
+    coefficients = np.array([2.0, -0.4])
+    q_z, q_y, intensity = generate_modal_detector_data(
+        q_min,
+        q_max,
+        indices,
+        coefficients,
+        number_of_pixels=51,
+        center_shift=center_shift,
+    )
+
+    relative_q_z = q_z - center_shift[0]
+    relative_q_y = q_y - center_shift[1]
+    q = np.hypot(relative_q_z, relative_q_y)
+    theta = np.arctan2(relative_q_y, relative_q_z)
+    selected = np.isfinite(intensity)
+    expected = evaluate_expansion(
+        q[selected],
+        theta[selected],
+        coefficients,
+        indices,
+        q_min=q_min,
+        q_max=q_max,
+    )
+
+    np.testing.assert_allclose(intensity[selected], expected)
+    assert np.all((q[selected] >= q_min) & (q[selected] <= q_max))
 
 
 def test_random_modal_detector_wrapper_is_reproducible():

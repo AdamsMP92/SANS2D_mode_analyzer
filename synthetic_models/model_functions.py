@@ -30,13 +30,26 @@ def generate_modal_detector_data(
     coefficients,
     number_of_pixels=161,
     radial_measure_exponent=1.0,
+    center_shift=(0.0, 0.0),
 ):
-    """Evaluate a modal expansion on a Cartesian detector annulus."""
-    q_z, q_y, q, theta, inside = create_detector_grid(
-        q_min,
-        q_max,
-        number_of_pixels=number_of_pixels,
-    )
+    """Evaluate a modal expansion with an optional displaced annulus centre.
+
+    ``center_shift=(delta_q_z, delta_q_y)`` places the physical signal centre
+    at those detector coordinates.  The returned coordinates remain laboratory
+    detector coordinates, while the modal expansion is evaluated relative to
+    the displaced centre.
+    """
+    shift = np.asarray(center_shift, dtype=float)
+    if shift.shape != (2,) or not np.all(np.isfinite(shift)):
+        raise ValueError("center_shift must contain two finite values")
+    detector_limit = q_max + float(np.max(np.abs(shift)))
+    q_axis = np.linspace(-detector_limit, detector_limit, number_of_pixels)
+    q_z, q_y = np.meshgrid(q_axis, q_axis)
+    relative_q_z = q_z - shift[0]
+    relative_q_y = q_y - shift[1]
+    q = np.hypot(relative_q_z, relative_q_y)
+    theta = np.arctan2(relative_q_y, relative_q_z)
+    inside = (q >= q_min) & (q <= q_max)
     values = evaluate_expansion(
         q[inside],
         theta[inside],
@@ -62,6 +75,7 @@ def generate_random_modal_detector_data(
     index_seed=7,
     coefficient_seed=8,
     return_model=False,
+    center_shift=(0.0, 0.0),
 ):
     """Generate a reproducible random modal signal on a Cartesian detector.
 
@@ -85,6 +99,7 @@ def generate_random_modal_detector_data(
         coefficients,
         number_of_pixels=number_of_pixels,
         radial_measure_exponent=radial_measure_exponent,
+        center_shift=center_shift,
     )
     if return_model:
         return (
@@ -144,6 +159,64 @@ def add_heteroskedastic_gaussian_noise(signal, uncertainty, seed=7):
         np.count_nonzero(finite),
     )
     return noisy_signal
+
+
+def add_correlated_gaussian_noise(
+    signal,
+    independent_uncertainty,
+    correlated_patterns,
+    seed=7,
+):
+    """Add independent noise plus Gaussian amplitudes of fixed spatial patterns.
+
+    If the pattern images are the columns of ``H``, the selected-pixel noise
+    covariance is ``diag(independent_uncertainty**2) + H @ H.T``.  The returned
+    uncertainty map contains only the marginal standard deviation at each
+    pixel; it does not encode the off-diagonal correlations.
+    """
+    signal, independent_uncertainty = np.broadcast_arrays(
+        np.asarray(signal, dtype=float),
+        np.asarray(independent_uncertainty, dtype=float),
+    )
+    patterns = np.asarray(correlated_patterns, dtype=float)
+    if patterns.ndim == signal.ndim:
+        patterns = patterns[None, ...]
+    if patterns.ndim != signal.ndim + 1 or patterns.shape[1:] != signal.shape:
+        raise ValueError(
+            "correlated_patterns must have shape (R,) + signal.shape"
+        )
+
+    finite = np.isfinite(signal)
+    if not np.any(finite):
+        raise ValueError("signal must contain at least one finite value")
+    if not np.all(np.isfinite(independent_uncertainty[finite])) or np.any(
+        independent_uncertainty[finite] <= 0.0
+    ):
+        raise ValueError(
+            "independent_uncertainty must be finite and positive wherever "
+            "signal is finite"
+        )
+    if not np.all(np.isfinite(patterns[:, finite])):
+        raise ValueError(
+            "correlated_patterns must be finite wherever signal is finite"
+        )
+
+    random = np.random.default_rng(seed)
+    latent_amplitudes = random.normal(size=patterns.shape[0])
+    noisy_signal = signal.copy()
+    noisy_signal[finite] += random.normal(
+        0.0,
+        independent_uncertainty[finite],
+        np.count_nonzero(finite),
+    )
+    noisy_signal[finite] += patterns[:, finite].T @ latent_amplitudes
+
+    marginal_uncertainty = np.full(signal.shape, np.nan)
+    marginal_uncertainty[finite] = np.sqrt(
+        independent_uncertainty[finite] ** 2
+        + np.sum(patterns[:, finite] ** 2, axis=0)
+    )
+    return noisy_signal, marginal_uncertainty
 
 
 def put_on_detector_grid(values, inside):
