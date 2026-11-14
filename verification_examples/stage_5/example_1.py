@@ -45,6 +45,9 @@ output_directory = Path(__file__).resolve().parent / "output"
 output_directory.mkdir(parents=True, exist_ok=True)
 raw_output = output_directory / "stage_5_example_1_uncentered.png"
 centered_output = output_directory / "stage_5_example_1_centered.png"
+modal_centered_output = (
+    output_directory / "stage_5_example_1_modal_centered.png"
+)
 comparison_output = output_directory / "stage_5_example_1_translation_coupling.png"
 
 raw = standard_analyzer(
@@ -66,6 +69,19 @@ centered = standard_analyzer(
     mode_limits=(n_max, m_max),
     output_path=centered_output,
 )
+modal_centered = standard_analyzer(
+    q_z,
+    q_y,
+    shifted_intensity,
+    uncertainty=uncertainty,
+    beam_centering=True,
+    odd_mode_centering=True,
+    odd_mode_centering_mode_limits=(5, 8),
+    odd_mode_centering_max_shift_pixels=0.25,
+    q_range=(q_min, q_max),
+    mode_limits=(n_max, m_max),
+    output_path=modal_centered_output,
+)
 
 recovered_shift = np.array(
     [centered.center_shift_q_z, centered.center_shift_q_y]
@@ -74,11 +90,19 @@ print(f"imposed centre shift: {imposed_shift}")
 print(f"recovered centre shift: {tuple(recovered_shift)}")
 print(f"raw odd power fraction: {raw.parity_fractions.odd:.6e}")
 print(f"centered odd power fraction: {centered.parity_fractions.odd:.6e}")
+print(
+    "modal-refined centre shift: "
+    f"{(modal_centered.center_shift_q_z, modal_centered.center_shift_q_y)}"
+)
+print(
+    "modal-refined odd power fraction: "
+    f"{modal_centered.parity_fractions.odd:.6e}"
+)
 
 # First-order translation prediction from the corrected even spectra.
-q = centered.spectra.q
-physical_i0 = centered.spectra.cosine[0] / np.sqrt(2.0 * np.pi)
-physical_i2 = centered.spectra.cosine[2] / np.sqrt(np.pi)
+q = modal_centered.spectra.q
+physical_i0 = modal_centered.spectra.cosine[0] / np.sqrt(2.0 * np.pi)
+physical_i2 = modal_centered.spectra.cosine[2] / np.sqrt(np.pi)
 physical_i0_derivative = np.gradient(physical_i0, q, edge_order=2)
 physical_i2_derivative = np.gradient(physical_i2, q, edge_order=2)
 delta_q_y = imposed_shift[1]
@@ -119,22 +143,30 @@ axes[0, 0].legend(fontsize=8)
 figure.colorbar(image, ax=axes[0, 0], label="intensity")
 
 orders = raw.powers.orders
-axes[0, 1].semilogy(
-    orders[1:],
-    raw.powers.sine[1:],
-    "o-",
-    label="uncentered sine power",
-)
-axes[0, 1].semilogy(
-    orders[1:],
-    centered.powers.sine[1:],
-    "o-",
-    label="center-corrected sine power",
-)
-axes[0, 1].set_title("sine angular powers")
+odd_orders = orders[(orders > 0) & (orders % 2 == 1)]
+for result, color, label in [
+    (raw, "tab:red", "uncentered"),
+    (centered, "tab:orange", "parity-centred"),
+    (modal_centered, "tab:blue", "modal-refined"),
+]:
+    axes[0, 1].semilogy(
+        odd_orders,
+        result.powers.cosine[odd_orders],
+        "o-",
+        color=color,
+        label=f"{label} cosine",
+    )
+    axes[0, 1].semilogy(
+        odd_orders,
+        result.powers.sine[odd_orders],
+        "x--",
+        color=color,
+        label=f"{label} sine",
+    )
+axes[0, 1].set_title("odd angular powers")
 axes[0, 1].set_xlabel("angular order n")
 axes[0, 1].set_ylabel("power")
-axes[0, 1].set_xticks(orders[1:])
+axes[0, 1].set_xticks(odd_orders)
 axes[0, 1].grid(alpha=0.25)
 axes[0, 1].legend(fontsize=8)
 
@@ -146,10 +178,10 @@ for axis, order, prediction in [
     axis.plot(q, prediction, "--", label="first-order shift prediction")
     axis.plot(
         q,
-        centered.spectra.sine[order],
+        modal_centered.spectra.sine[order],
         ":",
         linewidth=2.0,
-        label=f"centered $I_{order}^s(q)$",
+        label=f"modal-refined $I_{order}^s(q)$",
     )
     axis.axhline(0.0, color="black", linewidth=0.7)
     axis.set_title(f"translation coupling into sine order n={order}")
@@ -162,4 +194,5 @@ figure.savefig(comparison_output, dpi=150)
 plt.close(figure)
 print(f"output: {raw_output}")
 print(f"output: {centered_output}")
+print(f"output: {modal_centered_output}")
 print(f"output: {comparison_output}")

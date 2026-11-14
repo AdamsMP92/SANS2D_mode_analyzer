@@ -33,10 +33,13 @@ from .piecewise_linear_reference import (
 )
 from .preconditioning import (
     CenterRefinementResult,
+    OddModeCenterRefinementResult,
     affine_detector_geometry,
     apply_center_correction,
+    apply_q_center_correction,
     center_point_cloud_by_parity,
     pixel_integrated_annulus_design,
+    refine_center_by_odd_mode_power,
     refine_center_by_parity,
 )
 from .spectra import AngularRadialSpectra, angular_radial_spectra
@@ -60,6 +63,7 @@ class StandardAnalysisResult:
     sample_weight_image: NDArray[np.float64] | None
     beam_centering_method: str | None
     beam_centering_refinement: CenterRefinementResult | None
+    odd_mode_centering_refinement: OddModeCenterRefinementResult | None
     center_shift_q_z: float
     center_shift_q_y: float
     radial_measure_exponent: float
@@ -84,6 +88,9 @@ def standard_analyzer(
     beam_centering_grid_size: int = 129,
     beam_centering_source_radius_factor: float = 1.05,
     beam_centering_max_shift_pixels: float = 2.0,
+    odd_mode_centering: bool = False,
+    odd_mode_centering_mode_limits: tuple[int, int] | list[int] = (5, 8),
+    odd_mode_centering_max_shift_pixels: float = 0.25,
     log_intensity_colorbar: bool = False,
     pixel_integration_subpixels: int | None = None,
     pixel_integration_chunk_size: int = 512,
@@ -127,6 +134,15 @@ def standard_analyzer(
     point list is centred through :func:`center_point_cloud_by_parity`, whereas
     a two-dimensional detector image uses the native affine-grid parity
     refinement. Supplied uncertainties are required for either path.
+    With ``odd_mode_centering=True``, an additional bounded reciprocal-space
+    shift minimizes the fitted odd-angular coefficient-power fraction. This
+    step is implemented by :func:`refine_center_by_odd_mode_power` and can be
+    used either alone or as a local refinement after ``beam_centering``.
+    ``odd_mode_centering_mode_limits`` defines its separate, deliberately
+    compact full basis; ``odd_mode_centering_max_shift_pixels`` bounds the
+    additional search around the current centre. This procedure is justified
+    only when odd angular modes are known to be artefacts rather than physical
+    signal.
     ``log_intensity_colorbar=True`` changes only the shared display norm of
     the input and fitted intensity panels; nonpositive display values are
     masked but remain included in the numerical fit.
@@ -177,6 +193,7 @@ def standard_analyzer(
 
     beam_centering_method = None
     beam_centering_refinement = None
+    odd_mode_centering_refinement = None
     center_shift_q_z = 0.0
     center_shift_q_y = 0.0
     if beam_centering:
@@ -219,6 +236,81 @@ def standard_analyzer(
             center_shift_q_y = float(delta_q[1])
         q_z = np.asarray(centered_detector.q_z, dtype=float)
         q_y = np.asarray(centered_detector.q_y, dtype=float)
+
+    if odd_mode_centering:
+        centering_limits = _two_values(
+            odd_mode_centering_mode_limits,
+            "odd_mode_centering_mode_limits",
+        )
+        centering_indices = tuple(
+            rectangular_indices(
+                n_max=centering_limits[0],
+                m_max=centering_limits[1],
+            )
+        )
+        maximum_pixels = float(odd_mode_centering_max_shift_pixels)
+        if not np.isfinite(maximum_pixels) or maximum_pixels <= 0.0:
+            raise ValueError(
+                "odd_mode_centering_max_shift_pixels must be finite and positive"
+            )
+        if q_z.ndim == 2:
+            centering_geometry = affine_detector_geometry(q_z, q_y)
+            nominal_pixel_size = float(
+                np.max(np.linalg.norm(centering_geometry.matrix, axis=0))
+            )
+        else:
+            if (
+                isinstance(beam_centering_grid_size, bool)
+                or not isinstance(beam_centering_grid_size, (int, np.integer))
+                or int(beam_centering_grid_size) < 2
+            ):
+                raise ValueError(
+                    "beam_centering_grid_size must be an integer of at least two"
+                )
+            nominal_pixel_size = float(
+                2.0 * q_max / (int(beam_centering_grid_size) - 1)
+            )
+        if not np.isfinite(nominal_pixel_size) or nominal_pixel_size <= 0.0:
+            raise ValueError("could not determine a positive detector-pixel scale")
+        maximum_shift = maximum_pixels * nominal_pixel_size
+        modal_uncertainty = (
+            np.ones(intensity.shape, dtype=float)
+            if uncertainty_array is None
+            else uncertainty_array
+        )
+        modal_detector = DetectorData(
+            q_z=q_z,
+            q_y=q_y,
+            intensity=intensity,
+            uncertainty=modal_uncertainty,
+        )
+        odd_mode_centering_refinement = refine_center_by_odd_mode_power(
+            modal_detector,
+            centering_indices,
+            q_min=q_min,
+            q_max=q_max,
+            max_shift_q=(maximum_shift, maximum_shift),
+            sample_weight=weight_array,
+            radial_measure_exponent=radial_measure_exponent,
+        )
+        if not odd_mode_centering_refinement.success:
+            raise RuntimeError(
+                "odd-mode center refinement failed: "
+                f"{odd_mode_centering_refinement.message}"
+            )
+        modal_detector = apply_q_center_correction(
+            modal_detector,
+            odd_mode_centering_refinement.delta_q_z,
+            odd_mode_centering_refinement.delta_q_y,
+        )
+        q_z = np.asarray(modal_detector.q_z, dtype=float)
+        q_y = np.asarray(modal_detector.q_y, dtype=float)
+        center_shift_q_z += odd_mode_centering_refinement.delta_q_z
+        center_shift_q_y += odd_mode_centering_refinement.delta_q_y
+        if beam_centering_method is None:
+            beam_centering_method = "modal odd-power"
+        else:
+            beam_centering_method += " + modal odd-power"
 
     q = np.hypot(q_z, q_y)
     theta = np.arctan2(q_y, q_z)
@@ -431,6 +523,7 @@ def standard_analyzer(
         sample_weight_image=sample_weight_image,
         beam_centering_method=beam_centering_method,
         beam_centering_refinement=beam_centering_refinement,
+        odd_mode_centering_refinement=odd_mode_centering_refinement,
         center_shift_q_z=center_shift_q_z,
         center_shift_q_y=center_shift_q_y,
         radial_measure_exponent=radial_measure_exponent,

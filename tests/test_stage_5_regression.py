@@ -45,6 +45,19 @@ def test_parity_centering_removes_translation_induced_odd_modes():
         mode_limits=(8, 8),
         export_figure=False,
     )
+    modal_centered = standard_analyzer(
+        q_z,
+        q_y,
+        shifted_intensity,
+        uncertainty=uncertainty,
+        beam_centering=True,
+        odd_mode_centering=True,
+        odd_mode_centering_mode_limits=(5, 8),
+        odd_mode_centering_max_shift_pixels=0.25,
+        q_range=(q_min, q_max),
+        mode_limits=(8, 8),
+        export_figure=False,
+    )
 
     # The fitted displacement agrees with the imposed physical centre to a
     # small fraction of one nominal detector pixel.
@@ -53,6 +66,12 @@ def test_parity_centering_removes_translation_induced_odd_modes():
     )
     assert abs(centered.center_shift_q_y - imposed_shift[1]) < (
         0.02 * nominal_pixel_size
+    )
+    assert abs(modal_centered.center_shift_q_z - imposed_shift[0]) < 1.0e-8
+    assert abs(modal_centered.center_shift_q_y - imposed_shift[1]) < 1.0e-8
+    assert modal_centered.odd_mode_centering_refinement is not None
+    assert modal_centered.beam_centering_method == (
+        "affine-grid parity + modal odd-power"
     )
 
     # A q_y translation of an n=0,2 cosine signal couples at first order to
@@ -92,6 +111,10 @@ def test_parity_centering_removes_translation_induced_odd_modes():
     assert centered.parity_fractions.odd < 1.0e-6
     assert centered.parity_fractions.odd < (
         raw.parity_fractions.odd / 1000.0
+    )
+    assert modal_centered.parity_fractions.odd < 1.0e-16
+    assert modal_centered.odd_mode_centering_refinement.objective_after < (
+        modal_centered.odd_mode_centering_refinement.objective_before / 1.0e8
     )
 
     # The corrected even-mode coefficients return to the exact generating

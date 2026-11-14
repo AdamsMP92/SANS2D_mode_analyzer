@@ -362,6 +362,33 @@ centered = standard_analyzer(
 )
 ```
 
+For a parity-even observable, an optional second step can minimize the fitted
+fraction of coefficient power in odd angular orders. The numerical operation
+is implemented independently as `refine_center_by_odd_mode_power(...)`; the
+standard analyzer only orchestrates it:
+
+```python
+modal_centered = standard_analyzer(
+    data.q_z,
+    data.q_y,
+    data.intensity,
+    uncertainty=data.uncertainty,
+    beam_centering=True,
+    odd_mode_centering=True,
+    odd_mode_centering_mode_limits=(5, 8),
+    odd_mode_centering_max_shift_pixels=0.25,
+    q_range=(0.005, 0.030),
+    mode_limits=(12, 8),
+)
+```
+
+The compact centering basis is separate from the final analysis basis. The
+additional reciprocal-space shift and complete before/after diagnostics are
+returned as `odd_mode_centering_refinement`; `center_shift_q_z` and
+`center_shift_q_y` contain the total applied correction. This optimization is
+conditional on the parity assumption, centering basis, annulus, weights, and
+search bound. It must not be used to suppress odd modes that may be physical.
+
 If externally supplied `sample_weight` values depend on the annulus geometry,
 they should be recomputed after centering or replaced by the internal
 `pixel_integration_subpixels` path. Detector-efficiency weights that are tied
@@ -495,6 +522,8 @@ removed automatically. The public functions include:
   basis matrix;
 - `refine_center_by_parity(...)` and `apply_center_correction(...)` for a common
   detector-index centre correction;
+- `refine_center_by_odd_mode_power(...)` for a bounded modal refinement that
+  minimizes the fitted odd-angular power fraction;
 - `center_point_cloud_by_parity(...)` for the standard auxiliary-grid centre
   refinement of detector point lists while preserving their original samples;
 - `symmetry_diagnostic(...)` for parity or field-axis mirror residuals;

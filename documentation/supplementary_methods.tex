@@ -657,6 +657,31 @@ the standalone grid refiner defaults to one pixel. Multiple images can be
 passed to the standalone refiner to minimize the sum of their objectives
 for one common shift.
 
+An optional second, modular refinement operates directly on the modal
+representation. For every trial reciprocal-space shift $\bm\delta$, the data
+are refitted on a separately chosen finite basis $\Modes_{\mathrm{cen}}$, and
+the minimized objective is
+\begin{equation}
+ J_{\mathrm{odd}}(\bm\delta)=
+ \frac{\displaystyle\sum_{\substack{(n,m)\in\Modes_{\mathrm{cen}}\\
+                         |n|\ {\rm odd}}}
+       \widehat c_{nm}(\bm\delta)^2}
+      {\displaystyle\sum_{(n,m)\in\Modes_{\mathrm{cen}}}
+       \widehat c_{nm}(\bm\delta)^2}.
+ \label{eq:odd-mode-centering}
+\end{equation}
+The standalone function
+\texttt{refine\_center\_by\_odd\_mode\_power} accepts an explicit mode list
+and a bounded shift in reciprocal-space units. The standard analyzer exposes
+it through \texttt{odd\_mode\_centering=True}; by default it uses the compact
+full rectangle $|n|\leq5$, $0\leq m\leq8$ and limits the additional shift to
+$0.25$ nominal pixels around the current origin. It can start from the
+nominal origin or locally refine the pixelwise parity result. The fitting
+basis, annulus, measure exponent, sample weights, before/after objective and
+power, selected-point counts, number of evaluations, and recovered shift are
+retained as diagnostics. The final scientific fit remains independent of
+the centering basis.
+
 For a one-dimensional point list, the center is estimated on a regular
 $129\times129$ auxiliary grid spanning $[-q_{\max},q_{\max}]^2$ by default.
 Valid source points within $1.05q_{\max}$ are used for linear intensity
@@ -670,9 +695,11 @@ Geometry-dependent externally supplied weights must be recomputed for the
 shifted origin; internal pixel integration computes coverage after centering.
 
 Interpolation correlations and center-estimation uncertainty are not
-propagated. Accordingly, $Q_{\mathrm{cen}}$ is a centering diagnostic rather
-than a calibrated goodness-of-fit statistic for the original data. A
-physical odd contribution must not be absorbed into a parity-based center.
+propagated. Accordingly, neither $Q_{\mathrm{cen}}$ nor
+$J_{\mathrm{odd}}$ is a calibrated goodness-of-fit statistic for the original
+data. The modal optimum is additionally conditional on
+$\Modes_{\mathrm{cen}}$, the annulus, weights, and search bounds. A physical
+odd contribution must not be absorbed into a parity-based center.
 In particular, the polarization-averaged spin-flip cross section and an
 individual spin-flip channel need not have the same parity because an
 individual channel can contain a chiral contribution. An odd-power fraction
@@ -1266,22 +1293,29 @@ $\delta_y=2.625\times10^{-3}$ in the chosen reciprocal-coordinate units.
 The raw full-rectangle fit has an odd-power fraction
 $f_{\mathrm{odd}}=6.9043\times10^{-4}$.  Its two dominant odd sine powers
 occur at $n=1$ and $n=3$, and their fitted radial spectra agree with
-Eq.~\eqref{eq:stage5-qy-coupling} to first order.  The centre refinement
+Eq.~\eqref{eq:stage5-qy-coupling} to first order.  The pixelwise centre refinement
 returns
 $(\widehat\delta_z,\widehat\delta_y)
 =(6.7530\times10^{-5},2.62555\times10^{-3})$ and reduces the fitted odd-power
 fraction to $1.2879\times10^{-7}$.  It also recovers the three generating
-even-mode coefficients to the displayed numerical precision.  The example
-writes separate uncorrected and corrected standard overviews and a direct
-comparison of the induced $I_1^s(q)$ and $I_3^s(q)$ spectra with their
-first-order predictions.
+even-mode coefficients to the displayed numerical precision.  The remaining
+$q_z$ displacement is an interpolation-dependent numerical residual and
+produces small odd cosine powers. Starting from this result, the additional
+modal refinement of Eq.~\eqref{eq:odd-mode-centering} returns the total shift
+$(5.2\times10^{-12},2.625000007\times10^{-3})$ and reduces the odd-power
+fraction to $5.95\times10^{-21}$. The example writes separate uncorrected,
+pixel-centred, and modal-refined standard overviews and a direct comparison of
+the induced $I_1^s(q)$ and $I_3^s(q)$ spectra with their first-order
+predictions.
 
 The regression test \path{tests/test_stage_5_regression.py} fixes this
 noise-free construction.  It requires recovery of both centre coordinates to
 within $0.02$ nominal pixels, identifies $n=1,3$ as the two strongest raw odd
 sine orders, and requires the centre correction to suppress the odd-power
 fraction by more than three orders of magnitude while recovering the known
-even coefficients.
+even coefficients. It additionally requires the bounded modal refinement to
+recover the imposed shift to $10^{-8}$ in both reciprocal-space coordinates
+and to reduce the final odd-power fraction below $10^{-16}$.
 
 \paragraph{Interpretational boundary.}
 This test demonstrates that a small origin error is sufficient to create the
@@ -1292,6 +1326,11 @@ a geometrical origin is strongly supported.  The inference remains
 conditional on the physical parity assumption used by the centering
 objective.  A genuinely parity-odd contribution can also be reduced by that
 operation and must not be declared instrumental merely because it disappears.
+Minimizing all odd modes is therefore not a more model-independent operation
+than pixelwise parity centering; it is a useful numerical cross-check when
+the parity constraint has already been established physically. Stability
+against reasonable changes of $\Modes_{\mathrm{cen}}$, annulus, and shift
+bound should be checked for measured data.
 Moreover, the present fit treats the recovered centre as fixed; its estimation
 uncertainty and the interpolation correlations are not propagated into the
 reported modal covariance.  Stage~5 is therefore a systematic-error

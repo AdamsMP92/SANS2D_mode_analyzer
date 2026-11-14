@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -46,6 +46,34 @@ class CenterRefinementResult:
     objective_after: float
     pairs_before: int
     pairs_after: int
+    success: bool
+    message: str
+
+
+@dataclass(frozen=True)
+class OddModeCenterRefinementResult:
+    """Reciprocal-space centre shift minimizing fitted odd-mode power.
+
+    The reported shift is relative to the coordinates supplied to
+    :func:`refine_center_by_odd_mode_power`. ``objective_before`` and
+    ``objective_after`` are fractions of fitted coefficient power in odd
+    angular orders.
+    """
+
+    delta_q_z: float
+    delta_q_y: float
+    indices: tuple[ModeIndex, ...]
+    max_shift_q_z: float
+    max_shift_q_y: float
+    objective_before: float
+    objective_after: float
+    odd_power_before: float
+    odd_power_after: float
+    total_power_before: float
+    total_power_after: float
+    selected_before: int
+    selected_after: int
+    evaluations: int
     success: bool
     message: str
 
@@ -578,6 +606,187 @@ def refine_center_by_parity(
         pairs_after=pairs_after,
         success=bool(result.success),
         message=str(result.message),
+    )
+
+
+def refine_center_by_odd_mode_power(
+    data: DetectorData,
+    indices: Iterable[Sequence[int]],
+    *,
+    q_min: float,
+    q_max: float,
+    max_shift_q: tuple[float, float],
+    initial_shift: tuple[float, float] = (0.0, 0.0),
+    sample_weight: ArrayLike | None = None,
+    radial_measure_exponent: float = 1.0,
+) -> OddModeCenterRefinementResult:
+    """Refine the centre by minimizing the fitted odd-angular power fraction.
+
+    This is a modal alternative or local supplement to pixelwise parity
+    centring.  For every trial shift the intensity is refitted on the fixed
+    ``indices`` basis over the requested annulus, and the objective
+
+    ``sum(c_nm**2 for odd abs(n)) / sum(c_nm**2)``
+
+    is minimized.  The search is bounded in reciprocal-space coordinates by
+    ``max_shift_q=(max_delta_q_z, max_delta_q_y)``.  A reduced, explicitly
+    chosen basis is recommended because the result is conditional on the
+    truncation and because every objective evaluation solves a least-squares
+    problem.
+
+    The method assumes that odd angular modes are artefacts of miscentring.
+    It must therefore not be used to remove odd modes that may be physical.
+    """
+    modes = validate_indices(indices)
+    has_even = any(abs(n) % 2 == 0 for n, _ in modes)
+    has_odd = any(abs(n) % 2 == 1 for n, _ in modes)
+    if not (has_even and has_odd):
+        raise ValueError(
+            "odd-mode centering requires a basis containing both even and odd "
+            "angular modes"
+        )
+    lower, upper = _annulus_limits(q_min, q_max)
+    exponent = float(radial_measure_exponent)
+    if not np.isfinite(exponent) or exponent <= -1.0:
+        raise ValueError(
+            "radial_measure_exponent must be finite and greater than -1"
+        )
+
+    q_z, q_y, intensity, uncertainty = np.broadcast_arrays(
+        np.asarray(data.q_z, dtype=float),
+        np.asarray(data.q_y, dtype=float),
+        np.asarray(data.intensity, dtype=float),
+        np.asarray(data.uncertainty, dtype=float),
+    )
+    if q_z.ndim not in (1, 2):
+        raise ValueError(
+            "odd-mode centering requires a one-dimensional point list or "
+            "two-dimensional detector arrays"
+        )
+    if sample_weight is None:
+        external_weight = np.ones(q_z.shape, dtype=float)
+    else:
+        external_weight = np.broadcast_to(
+            np.asarray(sample_weight, dtype=float), q_z.shape
+        )
+
+    maximum = np.asarray(max_shift_q, dtype=float)
+    if maximum.shape != (2,) or not np.all(np.isfinite(maximum)):
+        raise ValueError("max_shift_q must contain two finite values")
+    if np.any(maximum <= 0.0):
+        raise ValueError("max_shift_q values must be positive")
+    initial = np.asarray(initial_shift, dtype=float)
+    if initial.shape != (2,) or not np.all(np.isfinite(initial)):
+        raise ValueError("initial_shift must contain two finite values")
+    if np.any(np.abs(initial) > maximum):
+        raise ValueError("initial_shift must lie inside the max_shift_q bounds")
+
+    odd_positions = np.array(
+        [abs(n) % 2 == 1 for n, _ in modes], dtype=bool
+    )
+
+    def evaluate(shift: NDArray[np.float64]):
+        corrected_q_z = q_z - shift[0]
+        corrected_q_y = q_y - shift[1]
+        radius = np.hypot(corrected_q_z, corrected_q_y)
+        angle = np.arctan2(corrected_q_y, corrected_q_z)
+        selected = (
+            np.isfinite(corrected_q_z)
+            & np.isfinite(corrected_q_y)
+            & np.isfinite(intensity)
+            & np.isfinite(uncertainty)
+            & (uncertainty > 0.0)
+            & np.isfinite(external_weight)
+            & (external_weight > 0.0)
+            & (radius >= lower)
+            & (radius <= upper)
+        )
+        count = int(np.count_nonzero(selected))
+        if count <= len(modes):
+            return float("inf"), float("nan"), float("nan"), count
+
+        radial_weight = radial_measure_weight(
+            radius[selected],
+            q_min=lower,
+            q_max=upper,
+            radial_measure_exponent=exponent,
+        )
+        precision = (
+            external_weight[selected]
+            * radial_weight
+            / uncertainty[selected] ** 2
+        )
+        positive = np.isfinite(precision) & (precision > 0.0)
+        if np.count_nonzero(positive) <= len(modes):
+            return float("inf"), float("nan"), float("nan"), count
+        matrix = design_matrix(
+            radius[selected][positive],
+            angle[selected][positive],
+            modes,
+            q_min=lower,
+            q_max=upper,
+            radial_measure_exponent=exponent,
+        )
+        square_root_precision = np.sqrt(precision[positive])
+        weighted_matrix = matrix * square_root_precision[:, None]
+        weighted_values = intensity[selected][positive] * square_root_precision
+        coefficients, _, rank, _ = np.linalg.lstsq(
+            weighted_matrix, weighted_values, rcond=None
+        )
+        if rank != len(modes):
+            return float("inf"), float("nan"), float("nan"), count
+        coefficient_power = coefficients**2
+        total_power = float(np.sum(coefficient_power))
+        if not np.isfinite(total_power) or total_power <= 0.0:
+            return float("inf"), float("nan"), total_power, count
+        odd_power = float(np.sum(coefficient_power[odd_positions]))
+        return odd_power / total_power, odd_power, total_power, count
+
+    before = evaluate(initial)
+    if not np.isfinite(before[0]):
+        raise ValueError(
+            "odd-mode centering objective is undefined at the initial shift"
+        )
+
+    def objective(normalized_shift: NDArray[np.float64]) -> float:
+        return evaluate(np.asarray(normalized_shift, dtype=float) * maximum)[0]
+
+    result = minimize(
+        objective,
+        initial / maximum,
+        method="Powell",
+        bounds=[(-1.0, 1.0), (-1.0, 1.0)],
+        options={"xtol": 1.0e-7, "ftol": 1.0e-12, "maxiter": 80},
+    )
+    shift = np.asarray(result.x, dtype=float) * maximum
+    after = evaluate(shift)
+    accepted = (
+        bool(result.success)
+        and np.isfinite(after[0])
+        and after[0] <= before[0] * (1.0 + 1.0e-12)
+    )
+    message = str(result.message)
+    if not np.isfinite(after[0]):
+        message += "; final odd-power objective is not finite"
+    elif after[0] > before[0] * (1.0 + 1.0e-12):
+        message += "; final odd-power objective exceeds its initial value"
+    return OddModeCenterRefinementResult(
+        delta_q_z=float(shift[0]),
+        delta_q_y=float(shift[1]),
+        indices=modes,
+        max_shift_q_z=float(maximum[0]),
+        max_shift_q_y=float(maximum[1]),
+        objective_before=float(before[0]),
+        objective_after=float(after[0]),
+        odd_power_before=float(before[1]),
+        odd_power_after=float(after[1]),
+        total_power_before=float(before[2]),
+        total_power_after=float(after[2]),
+        selected_before=int(before[3]),
+        selected_after=int(after[3]),
+        evaluations=int(result.nfev),
+        success=accepted,
+        message=message,
     )
 
 
